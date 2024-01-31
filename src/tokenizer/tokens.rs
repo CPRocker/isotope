@@ -1,3 +1,7 @@
-pub struct Token {
-    pub(crate) content: String,
+#[derive(Debug)]
+pub enum Token {
+    Identifier(String),
+    Literal(String),
+    Return,
+    Semi,
 }
