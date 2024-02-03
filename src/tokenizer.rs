@@ -4,7 +4,7 @@ pub fn tokenize(content: String) -> Vec<tokens::Token> {
     let mut tokens = Vec::new();
 
     let mut current_idx = 0;
-    while (current_idx < content.len()) {
+    while current_idx < content.len() {
         let mut character = content.chars().nth(current_idx).unwrap();
 
         if character.is_whitespace() {

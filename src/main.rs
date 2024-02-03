@@ -1,6 +1,7 @@
-mod tokenizer;
-mod parser;
 mod generator;
+mod parser;
+mod tokenizer;
+mod tree;
 
 use std::env;
 use std::fs;
@@ -8,19 +9,18 @@ use std::fs;
 fn main() {
     let args: Vec<String> = env::args().collect();
 
-    if args.len() <= 1 {
-        panic!("Requires cmd line args to run");
+    if args.len() != 2 {
+        panic!("Usage: isotope `path`");
     }
 
-    let file_path = args.get(1)
-        .expect("Requires file to compile");
+    let file_path = args.get(1).unwrap();
 
     if !file_path.ends_with(".isotope") {
         panic!("File must end with `.isotope`");
     }
 
-    let contents = fs::read_to_string(file_path)
-        .unwrap_or_else(|_| panic!("Cannot read file: `{file_path}`"));
+    let contents =
+        fs::read_to_string(file_path).unwrap_or_else(|_| panic!("Cannot read file: `{file_path}`"));
 
     let tokens = tokenizer::tokenize(contents);
 
