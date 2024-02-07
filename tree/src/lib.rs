@@ -2,6 +2,8 @@
 //  https://dev.to/deciduously/no-more-tears-no-more-knots-arena-allocated-trees-in-rust-44k6
 //  https://sachanganesh.com/programming/graph-tree-traversals-in-rust/
 
+use std::collections::VecDeque;
+
 pub type TreeIndex = usize;
 
 #[derive(Debug, Clone)]
@@ -77,6 +79,11 @@ where
     }
 }
 
+pub enum TreeIter {
+    BreadthFirstTreeIter,
+    DepthFirstTreeIter,
+}
+
 impl<T> IntoIterator for Tree<T>
 where
     T: Clone,
@@ -88,11 +95,11 @@ where
         match self.root {
             Some(root) => TreeIntoIterator {
                 tree: self,
-                stack: vec![root],
+                queue: VecDeque::from([root]),
             },
             _ => TreeIntoIterator {
                 tree: self,
-                stack: vec![],
+                queue: VecDeque::new(),
             },
         }
     }
@@ -103,7 +110,7 @@ where
     T: Clone,
 {
     tree: Tree<T>,
-    stack: Vec<TreeIndex>,
+    queue: VecDeque<TreeIndex>,
 }
 
 impl<T> Iterator for TreeIntoIterator<T>
@@ -113,9 +120,9 @@ where
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some(index) = self.stack.pop() {
+        while let Some(index) = self.queue.pop_front() {
             if let Some(node) = self.tree.node_at(index) {
-                self.stack.extend(node.children.iter());
+                self.queue.extend(node.children.iter());
 
                 return Some(node.value.clone());
             }

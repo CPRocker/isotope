@@ -18,8 +18,8 @@ fn main() {
         panic!("File must end with `.isotope`");
     }
 
-    let contents =
-        fs::read_to_string(file_path).unwrap_or_else(|_| panic!("Cannot read file: `{file_path}`"));
+    let contents = fs::read_to_string(file_path)
+        .unwrap_or_else(|_| panic!("Cannot read file: `{}`", file_path));
 
     let tokens = tokenizer::tokenize(contents);
 
@@ -32,13 +32,13 @@ fn main() {
 
     let mut t = tree::Tree::default();
 
-    let a = t.new_node(14, None);
+    let a = t.new_node(0, None);
     t.set_root(Some(a));
-    let b = t.add_child(5, a);
-    let _c = t.add_child(8, a);
+    let b = t.add_child(1, a);
+    let _c = t.add_child(2, a);
 
-    let _d = t.add_child(24, b);
-    let _e = t.add_child(56, b);
+    let _d = t.add_child(3, b);
+    let _e = t.add_child(4, b);
 
     for value in t.into_iter() {
         dbg!(value);
