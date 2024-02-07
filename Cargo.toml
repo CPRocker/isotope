@@ -1,9 +1,25 @@
+[workspace]
+members = ["tree"]
+
+[workspace.package]
+version = "0.1.0"
+authors = ["Carson Price"]
+description = "A compiler for the Isotope programming language"
+edition = "2021"
+license-file = "LICENSE"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
 [package]
 name = "isotope"
-version = "0.1.0"
-edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+description.workspace = true
+readme = "README.md"
+repository = "https://github.com/CPRocker/isotope/tree/main"
+keywords = ["isotope", "compiler"]
 
 [dependencies]
-regex = "1.10.3"
+tree = { path = "tree" }

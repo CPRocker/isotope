@@ -1,0 +1,7 @@
+[package]
+name = "tree"
+version.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true

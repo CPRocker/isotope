@@ -81,7 +81,7 @@ impl<T> IntoIterator for Tree<T>
 where
     T: Clone,
 {
-    type Item = TreeNode<T>;
+    type Item = T;
     type IntoIter = TreeIntoIterator<T>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -110,14 +110,14 @@ impl<T> Iterator for TreeIntoIterator<T>
 where
     T: Clone,
 {
-    type Item = TreeNode<T>;
+    type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(index) = self.stack.pop() {
             if let Some(node) = self.tree.node_at(index) {
                 self.stack.extend(node.children.iter());
 
-                return Some(node.clone());
+                return Some(node.value.clone());
             }
         }
 

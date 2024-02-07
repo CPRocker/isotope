@@ -1,7 +1,6 @@
 mod generator;
 mod parser;
 mod tokenizer;
-mod tree;
 
 use std::env;
 use std::fs;
@@ -41,7 +40,7 @@ fn main() {
     let _d = t.add_child(24, b);
     let _e = t.add_child(56, b);
 
-    for node in t.into_iter() {
-        dbg!(node);
+    for value in t.into_iter() {
+        dbg!(value);
     }
 }
