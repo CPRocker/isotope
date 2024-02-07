@@ -77,35 +77,37 @@ where
             None
         }
     }
-}
 
-pub enum TreeIter {
-    BreadthFirstTreeIter,
-    DepthFirstTreeIter,
-}
-
-impl<T> IntoIterator for Tree<T>
-where
-    T: Clone,
-{
-    type Item = T;
-    type IntoIter = TreeIntoIterator<T>;
-
-    fn into_iter(self) -> Self::IntoIter {
+    pub fn bfs_iter(self) -> BreadthFirstPreorderTreeIterator<T> {
         match self.root {
-            Some(root) => TreeIntoIterator {
+            Some(root) => BreadthFirstPreorderTreeIterator {
                 tree: self,
                 queue: VecDeque::from([root]),
             },
-            _ => TreeIntoIterator {
+            _ => BreadthFirstPreorderTreeIterator {
                 tree: self,
                 queue: VecDeque::new(),
             },
         }
     }
+
+    pub fn dfs_iter(self) -> DepthFirstPreorderTreeIterator<T> {
+        match self.root {
+            Some(root) => DepthFirstPreorderTreeIterator {
+                tree: self,
+                stack: Vec::from([root]),
+                visited: Vec::new(),
+            },
+            _ => DepthFirstPreorderTreeIterator {
+                tree: self,
+                stack: Vec::new(),
+                visited: Vec::new(),
+            },
+        }
+    }
 }
 
-pub struct TreeIntoIterator<T>
+pub struct BreadthFirstPreorderTreeIterator<T>
 where
     T: Clone,
 {
@@ -113,7 +115,7 @@ where
     queue: VecDeque<TreeIndex>,
 }
 
-impl<T> Iterator for TreeIntoIterator<T>
+impl<T> Iterator for BreadthFirstPreorderTreeIterator<T>
 where
     T: Clone,
 {
@@ -123,6 +125,37 @@ where
         while let Some(index) = self.queue.pop_front() {
             if let Some(node) = self.tree.node_at(index) {
                 self.queue.extend(node.children.iter());
+
+                return Some(node.value.clone());
+            }
+        }
+
+        None
+    }
+}
+
+pub struct DepthFirstPreorderTreeIterator<T>
+where
+    T: Clone,
+{
+    tree: Tree<T>,
+    stack: Vec<TreeIndex>,
+    visited: Vec<TreeIndex>,
+}
+
+impl<T> Iterator for DepthFirstPreorderTreeIterator<T>
+where
+    T: Clone,
+{
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(index) = self.stack.pop() {
+            if let Some(node) = self.tree.node_at(index) {
+                if !self.visited.contains(&index) {
+                    self.visited.push(index);
+                    self.stack.extend(node.children.iter().rev());
+                }
 
                 return Some(node.value.clone());
             }
