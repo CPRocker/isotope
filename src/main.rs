@@ -30,4 +30,20 @@ fn main() {
 
     // TODO: write to output file
     println!("{}", output);
+
+    let mut t = tree::Tree::default();
+
+    let a = t.new_node(14, None);
+    t.set_root(Some(a));
+    let b = t.add_child(5, a);
+    let _c = t.add_child(8, a);
+
+    let _d = t.add_child(24, b);
+    let _e = t.add_child(56, b);
+
+    let mut val = t.iter();
+    while let Some(i) = val.next(&t) {
+        let node = t.node_at(i).expect("node should exist");
+        dbg!(node);
+    }
 }
