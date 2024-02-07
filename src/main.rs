@@ -41,9 +41,7 @@ fn main() {
     let _d = t.add_child(24, b);
     let _e = t.add_child(56, b);
 
-    let mut val = t.iter();
-    while let Some(i) = val.next(&t) {
-        let node = t.node_at(i).expect("node should exist");
+    for node in t.into_iter() {
         dbg!(node);
     }
 }

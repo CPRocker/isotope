@@ -4,14 +4,20 @@
 
 pub type TreeIndex = usize;
 
-#[derive(Debug)]
-pub struct TreeNode<T> {
+#[derive(Debug, Clone)]
+pub struct TreeNode<T>
+where
+    T: Clone,
+{
     value: T,
     parent: Option<TreeIndex>,
     children: Vec<TreeIndex>,
 }
 
-impl<T> TreeNode<T> {
+impl<T> TreeNode<T>
+where
+    T: Clone,
+{
     fn new(value: T, parent: Option<TreeIndex>) -> Self {
         Self {
             value,
@@ -21,13 +27,19 @@ impl<T> TreeNode<T> {
     }
 }
 
-#[derive(Debug, Default)]
-pub struct Tree<T> {
+#[derive(Debug, Default, Clone)]
+pub struct Tree<T>
+where
+    T: Clone,
+{
     arena: Vec<Option<TreeNode<T>>>,
     root: Option<TreeIndex>,
 }
 
-impl<T> Tree<T> {
+impl<T> Tree<T>
+where
+    T: Clone,
+{
     pub fn set_root(&mut self, root: Option<TreeIndex>) {
         self.root = root;
     }
@@ -63,31 +75,49 @@ impl<T> Tree<T> {
             None
         }
     }
+}
 
-    pub fn iter(&self) -> BreadthFirstTreeIter {
-        BreadthFirstTreeIter::new(self.root)
+impl<T> IntoIterator for Tree<T>
+where
+    T: Clone,
+{
+    type Item = TreeNode<T>;
+    type IntoIter = TreeIntoIterator<T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        match self.root {
+            Some(root) => TreeIntoIterator {
+                tree: self,
+                stack: vec![root],
+            },
+            _ => TreeIntoIterator {
+                tree: self,
+                stack: vec![],
+            },
+        }
     }
 }
 
-pub struct BreadthFirstTreeIter {
+pub struct TreeIntoIterator<T>
+where
+    T: Clone,
+{
+    tree: Tree<T>,
     stack: Vec<TreeIndex>,
 }
 
-impl BreadthFirstTreeIter {
-    pub fn new(root: Option<TreeIndex>) -> Self {
-        if let Some(index) = root {
-            BreadthFirstTreeIter { stack: vec![index] }
-        } else {
-            BreadthFirstTreeIter { stack: vec![] }
-        }
-    }
+impl<T> Iterator for TreeIntoIterator<T>
+where
+    T: Clone,
+{
+    type Item = TreeNode<T>;
 
-    pub fn next<T>(&mut self, tree: &Tree<T>) -> Option<TreeIndex> {
-        while let Some(node_index) = self.stack.pop() {
-            if let Some(node) = tree.node_at(node_index) {
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(index) = self.stack.pop() {
+            if let Some(node) = self.tree.node_at(index) {
                 self.stack.extend(node.children.iter());
 
-                return Some(node_index);
+                return Some(node.clone());
             }
         }
 
