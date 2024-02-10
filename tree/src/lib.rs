@@ -42,15 +42,23 @@ impl<T> Tree<T>
 where
     T: Clone,
 {
-    pub fn new() -> Self {
-        Self {
-            arena: vec![],
-            root: None,
+    pub fn new(root_value: Option<T>) -> Self {
+        match root_value {
+            Some(value) => {
+                let mut t = Self::new(None);
+                let root_index = t.new_node(value, None);
+                t.set_root(Some(root_index));
+                t
+            }
+            None => Self {
+                arena: vec![],
+                root: None,
+            },
         }
     }
 
-    pub fn set_root(&mut self, root: Option<TreeIndex>) {
-        self.root = root;
+    pub fn set_root(&mut self, root_index: Option<TreeIndex>) {
+        self.root = root_index;
     }
 
     pub fn add_child(&mut self, child: T, parent: TreeIndex) -> TreeIndex {
@@ -176,12 +184,10 @@ where
 mod tests {
     #[test]
     fn bfs_iter_correct_order() {
-        let mut t = super::Tree::default();
-        let a = t.new_node(0, None);
-        t.set_root(Some(a));
-
-        let b = t.add_child(1, a);
-        let _c = t.add_child(2, a);
+        let mut t = super::Tree::new(Some(0));
+        let root = t.root.unwrap();
+        let b = t.add_child(1, root);
+        let _c = t.add_child(2, root);
         let d = t.add_child(3, b);
         let _e = t.add_child(4, b);
         let _f = t.add_child(5, d);
@@ -198,12 +204,10 @@ mod tests {
 
     #[test]
     fn dfs_iter_correct_order() {
-        let mut t = super::Tree::default();
-        let a = t.new_node(0, None);
-        t.set_root(Some(a));
-
-        let b = t.add_child(1, a);
-        let _c = t.add_child(2, a);
+        let mut t = super::Tree::new(Some(0));
+        let root = t.root.unwrap();
+        let b = t.add_child(1, root);
+        let _c = t.add_child(2, root);
         let d = t.add_child(3, b);
         let _e = t.add_child(4, b);
         let _f = t.add_child(5, d);
