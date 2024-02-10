@@ -1,2 +1,4 @@
-#[derive(Debug)]
-pub struct Statement;
+#[derive(Debug, Clone)]
+pub enum Statement {
+    Program,
+}

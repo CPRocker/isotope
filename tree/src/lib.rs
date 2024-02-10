@@ -29,7 +29,7 @@ where
     }
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct Tree<T>
 where
     T: Clone,
@@ -42,6 +42,13 @@ impl<T> Tree<T>
 where
     T: Clone,
 {
+    pub fn new() -> Self {
+        Self {
+            arena: vec![],
+            root: None,
+        }
+    }
+
     pub fn set_root(&mut self, root: Option<TreeIndex>) {
         self.root = root;
     }

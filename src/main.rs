@@ -23,7 +23,7 @@ fn main() {
 
     let tokens = tokenizer::tokenize(contents);
 
-    let statements = parser::parse(tokens);
+    let statements: tree::Tree<parser::statements::Statement> = parser::parse(tokens);
 
     let output = generator::generate(statements);
 
