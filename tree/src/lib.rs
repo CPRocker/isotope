@@ -164,3 +164,50 @@ where
         None
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn bfs_iter_correct_order() {
+        let mut t = super::Tree::default();
+        let a = t.new_node(0, None);
+        t.set_root(Some(a));
+
+        let b = t.add_child(1, a);
+        let _c = t.add_child(2, a);
+        let d = t.add_child(3, b);
+        let _e = t.add_child(4, b);
+        let _f = t.add_child(5, d);
+
+        let mut iter = t.bfs_iter();
+        assert_eq!(iter.next(), Some(0));
+        assert_eq!(iter.next(), Some(1));
+        assert_eq!(iter.next(), Some(2));
+        assert_eq!(iter.next(), Some(3));
+        assert_eq!(iter.next(), Some(4));
+        assert_eq!(iter.next(), Some(5));
+        assert_eq!(iter.next(), None);
+    }
+
+    #[test]
+    fn dfs_iter_correct_order() {
+        let mut t = super::Tree::default();
+        let a = t.new_node(0, None);
+        t.set_root(Some(a));
+
+        let b = t.add_child(1, a);
+        let _c = t.add_child(2, a);
+        let d = t.add_child(3, b);
+        let _e = t.add_child(4, b);
+        let _f = t.add_child(5, d);
+
+        let mut iter = t.dfs_iter();
+        assert_eq!(iter.next(), Some(0));
+        assert_eq!(iter.next(), Some(1));
+        assert_eq!(iter.next(), Some(3));
+        assert_eq!(iter.next(), Some(5));
+        assert_eq!(iter.next(), Some(4));
+        assert_eq!(iter.next(), Some(2));
+        assert_eq!(iter.next(), None);
+    }
+}

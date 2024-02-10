@@ -29,24 +29,4 @@ fn main() {
 
     // TODO: write to output file
     println!("{}", output);
-
-    let mut t = tree::Tree::default();
-
-    let a = t.new_node(0, None);
-    t.set_root(Some(a));
-    let b = t.add_child(1, a);
-    let _c = t.add_child(2, a);
-
-    let d = t.add_child(3, b);
-    let _e = t.add_child(4, b);
-
-    let _f = t.add_child(5, d);
-
-    // for value in t.bfs_iter() {
-    //     dbg!(value);
-    // }
-
-    for value in t.dfs_iter() {
-        dbg!(value);
-    }
 }
