@@ -26,7 +26,7 @@ fn main() {
     let program = parser::parse(tokens.into());
     let program = match program {
         Ok(program) => program,
-        Err(e) => panic!(e),
+        Err(e) => panic!("{}", e),
     };
 
     let output = generator::generate(program);

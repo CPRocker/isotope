@@ -1,11 +1,11 @@
+extern crate regex;
+
 use std::collections::VecDeque;
 
 use crate::tokenizer::tokens::Token;
 
 pub mod expressions;
 pub mod statements;
-
-use self::statements::Statement;
 
 pub fn parse(mut tokens: VecDeque<Token>) -> Result<statements::Program, String> {
     let mut program = statements::Program::new();
@@ -35,7 +35,7 @@ fn parse_statement(
                     Some(Token::Semi) => {
                         tokens.pop_front();
 
-                        Ok((Statement::Return { expression }, tokens))
+                        Ok((statements::Statement::Return { expression }, tokens))
                     }
                     _ => Err(String::from("Expected `;`")),
                 },
@@ -51,7 +51,7 @@ fn parse_expression(
     mut tokens: VecDeque<Token>,
 ) -> Result<(expressions::Expression, VecDeque<Token>), String> {
     match tokens.pop_front() {
-        Some(Token::Literal(s)) => match parse_literal(s) {
+        Some(Token::Literal(value)) => match parse_literal(&value) {
             Ok(literal) => Ok((expressions::Expression::Literal(literal), tokens)),
             Err(e) => Err(e),
         },
@@ -59,11 +59,14 @@ fn parse_expression(
     }
 }
 
-fn parse_literal(literal: String) -> Result<expressions::Literal, String> {
-    match literal.as_str() {
-        "0" => Ok(expressions::Literal::IntLiteral { value: 0 }),
-        "1" => Ok(expressions::Literal::IntLiteral { value: 1 }),
-        "" => Err(String::from("Empty literal")),
-        _ => Err(format!("Could not parse literal: {}", literal)),
+fn parse_literal(literal: &str) -> Result<expressions::Literal, String> {
+    let int_re = regex::Regex::new(r"\d+").unwrap();
+
+    if int_re.is_match(literal) {
+        return Ok(expressions::Literal::IntLiteral {
+            value: literal.parse::<i64>().unwrap(),
+        });
     }
+
+    Err(format!("Could not parse literal: {}", literal))
 }
