@@ -1,7 +1,7 @@
-use crate::parser::statements::Statement;
+use crate::parser::statements::Program;
 
-pub fn generate(statements: tree::Tree<Statement>) -> String {
-    dbg!(statements);
+pub fn generate(program: Program) -> String {
+    dbg!(program);
 
     return String::new();
 }

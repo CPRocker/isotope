@@ -23,9 +23,13 @@ fn main() {
 
     let tokens = tokenizer::tokenize(contents);
 
-    let statements: tree::Tree<parser::statements::Statement> = parser::parse(tokens);
+    let program = parser::parse(tokens.into());
+    let program = match program {
+        Ok(program) => program,
+        Err(e) => panic!(e),
+    };
 
-    let output = generator::generate(statements);
+    let output = generator::generate(program);
 
     // TODO: write to output file
     println!("{}", output);
