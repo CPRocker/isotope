@@ -1,5 +1,5 @@
 [workspace]
-members = ["tree"]
+members = []
 
 [workspace.package]
 version = "0.1.0"
@@ -7,9 +7,6 @@ authors = ["Carson Price"]
 description = "A compiler for the Isotope programming language"
 edition = "2021"
 license-file = "LICENSE"
-
-[workspace.lints.rust]
-unsafe_code = "forbid"
 
 [package]
 name = "isotope"
@@ -22,5 +19,4 @@ repository = "https://github.com/CPRocker/isotope/tree/main"
 keywords = ["isotope", "compiler"]
 
 [dependencies]
-tree = { path = "tree" }
 regex = "1.10.3"
