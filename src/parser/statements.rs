@@ -1,6 +1,6 @@
 use super::expressions;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Program {
     statements: Vec<Statement>,
 }
@@ -15,7 +15,7 @@ impl Program {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum Statement {
     Return { expression: expressions::Expression },
 }

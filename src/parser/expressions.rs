@@ -1,9 +1,9 @@
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum Expression {
     Literal(Literal),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum Literal {
     IntLiteral { value: i64 },
 }

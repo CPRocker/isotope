@@ -42,7 +42,7 @@ fn parse_statement(
                 Err(e) => Err(e),
             }
         }
-        Some(_) => Err(String::from("Unexpected token")),
+        Some(token) => Err(format!("Unexpected token: {:?}", token)),
         None => Err(String::from("Unable to parse statement")),
     }
 }

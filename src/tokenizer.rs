@@ -21,7 +21,7 @@ pub fn tokenize(content: String) -> Vec<tokens::Token> {
                     panic!("Unknown number");
                 }
 
-                character = content.chars().nth(current_idx).unwrap();
+                character = content.chars().nth(current_idx).unwrap_or_default();
             }
             current_idx -= 1;
 
