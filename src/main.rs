@@ -30,7 +30,10 @@ fn main() {
     };
 
     let output = generator::generate(program);
-
-    println!("{}", output);
-    todo!("Output to .nasm file and assemble to .exe");
+    let output_file_path = format!(
+        "{}{}",
+        file_path[..file_path.rfind('.').unwrap()].to_owned(),
+        ".asm"
+    );
+    let _ = fs::write(output_file_path, output);
 }
