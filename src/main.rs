@@ -4,6 +4,7 @@ mod tokenizer;
 
 use std::env;
 use std::fs;
+use std::process::Command;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -36,4 +37,17 @@ fn main() {
         ".asm"
     );
     let _ = fs::write(output_file_path, output);
+
+    if cfg!(target_os = "windows") {
+        Command::new("nasm")
+            .args(["-f", "win64", "examples\\file.asm"])
+            .spawn()
+            .expect("Failed to load assembler: `nasm`");
+        Command::new("gcc")
+            .args(["examples\\file.obj", "-mconsole"])
+            .spawn()
+            .expect("Failed to load linker: `gcc`");
+    } else {
+        todo!();
+    };
 }

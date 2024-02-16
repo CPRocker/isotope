@@ -1,16 +1,14 @@
-global _start
+global main
 
 ; program starts
-_start:
+main:
     ; return
-    mov eax, 1
-    push dword, 2098
-    push eax
-    int 0x80
+    push dword 0
+    pop rax
+    ret
 
     ; return
-    mov eax, 1
-    push dword, 303213
-    push eax
-    int 0x80
+    push dword 303213
+    pop rax
+    ret
 
