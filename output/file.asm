@@ -1,9 +1,10 @@
-global main
+section .text
+    global main
 
 ; program starts
 main:
     ; return
-    push dword 0
+    push dword 69
     pop rax
     ret
 

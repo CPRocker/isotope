@@ -4,8 +4,7 @@ use crate::parser::{
 };
 
 pub fn generate(program: Program) -> String {
-    let mut output = String::from("global main\n\n; program starts\nmain:\n");
-    // let mut output = String::from("section .text\n    global main\n\n; program starts\nmain:\n");
+    let mut output = String::from("section .text\n    global main\n\n; program starts\nmain:\n");
 
     for statement in program {
         output.push_str(generate_statement(statement).as_str());
