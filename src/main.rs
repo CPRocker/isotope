@@ -31,6 +31,6 @@ fn main() {
 
     let output = generator::generate(program);
 
-    // TODO: write to output file
     println!("{}", output);
+    todo!("Output to .nasm file and assemble to .exe");
 }

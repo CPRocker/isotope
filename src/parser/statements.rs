@@ -15,6 +15,16 @@ impl Program {
     }
 }
 
+impl IntoIterator for Program {
+    type Item = Statement;
+
+    type IntoIter = std::vec::IntoIter<Statement>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.statements.into_iter()
+    }
+}
+
 #[derive(Debug)]
 pub enum Statement {
     Return { expression: expressions::Expression },
