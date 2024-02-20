@@ -35,23 +35,31 @@ fn main() -> Result<(), String> {
 
     let file_name = isotope_file_path.file_stem().unwrap().to_string_lossy();
     let asm_file_path = &format!("output/{}.asm", file_name);
-    let _ = fs::write(asm_file_path, output);
-
     let obj_file_path = &format!("output/{}.obj", file_name);
     let exe_file_path = &format!("output/{}.exe", file_name);
 
+    let _ = fs::write(asm_file_path, output);
+
     if cfg!(target_os = "windows") {
-        Command::new("nasm")
-            .args(["-f", "win64", "-o", obj_file_path, asm_file_path])
-            .spawn()
-            .expect("Failed to load assembler: `nasm`");
-        Command::new("gcc")
-            .args([obj_file_path, "-o", exe_file_path, "-mconsole"])
-            .spawn()
-            .expect("Failed to load linker: `gcc`");
+        assemble_windows(asm_file_path, obj_file_path);
+        link_windows(obj_file_path, exe_file_path);
     } else {
         todo!();
     };
 
     Ok(())
+}
+
+fn assemble_windows(asm_file_path: &String, obj_file_path: &String) {
+    Command::new("nasm")
+        .args(["-f", "win64", "-o", obj_file_path, asm_file_path])
+        .spawn()
+        .expect("Failed to load assembler: `nasm`");
+}
+
+fn link_windows(obj_file_path: &String, exe_file_path: &String) {
+    Command::new("gcc")
+        .args([obj_file_path, "-o", exe_file_path, "-mconsole"])
+        .spawn()
+        .expect("Failed to load linker: `gcc`");
 }
