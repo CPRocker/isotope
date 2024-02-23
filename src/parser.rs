@@ -4,6 +4,8 @@ use std::collections::VecDeque;
 
 use crate::{error, tokenizer::tokens::Token};
 
+use self::expressions::{BinaryOperator, Expression};
+
 pub mod expressions;
 pub mod statements;
 
@@ -33,16 +35,12 @@ fn parse_statement(
         Some(Token::Return) => {
             tokens.pop_front();
 
-            let (expression, remaining_tokens) = parse_expression(tokens)?;
+            let (expression, remaining_tokens) = parse_expression(tokens, 0)?;
             tokens = remaining_tokens;
 
-            match tokens.front() {
-                Some(Token::Semi) => {
-                    tokens.pop_front();
-                    Ok((statements::Statement::Return { expression }, tokens))
-                }
-                _ => Err(error::ParsingError::ExpectedToken(String::from(";"))),
-            }
+            tokens = try_consume(tokens, Token::Semi)?;
+
+            Ok((statements::Statement::Return { expression }, tokens))
         }
         Some(_) => Err(error::ParsingError::UnexpectedToken(
             tokens.pop_front().unwrap(),
@@ -53,6 +51,49 @@ fn parse_statement(
 
 fn parse_expression(
     mut tokens: VecDeque<Token>,
+    precedence: u8,
+) -> Result<(expressions::Expression, VecDeque<Token>), error::ParsingError> {
+    let (mut left_expression, remaining_tokens) = parse_primary_expression(tokens)?;
+    tokens = remaining_tokens;
+
+    while let Some(token) = tokens.front() {
+        match token {
+            Token::Plus | Token::Minus => {
+                let operator_token = tokens.pop_front().unwrap();
+                let operator = match operator_token {
+                    Token::Plus => BinaryOperator::Add,
+                    Token::Minus => BinaryOperator::Sub,
+                    _ => unreachable!(),
+                };
+
+                let operator_precedence = operator.get_precedence();
+                if operator_precedence < precedence {
+                    break;
+                }
+
+                let (right_expression, remaining_tokens) = parse_primary_expression(tokens)?;
+                tokens = remaining_tokens;
+
+                left_expression = match operator {
+                    BinaryOperator::Add | BinaryOperator::Sub => {
+                        expressions::Expression::Binary(expressions::BinaryExpression::Additive(
+                            Box::new(left_expression),
+                            operator,
+                            Box::new(right_expression),
+                        ))
+                    }
+                    _ => unreachable!(),
+                };
+            }
+            _ => break,
+        }
+    }
+
+    Ok((left_expression, tokens))
+}
+
+fn parse_primary_expression(
+    mut tokens: VecDeque<Token>,
 ) -> Result<(expressions::Expression, VecDeque<Token>), error::ParsingError> {
     match tokens.pop_front() {
         Some(Token::Literal(value)) => {
@@ -60,22 +101,14 @@ fn parse_expression(
             Ok((expressions::Expression::Literal(literal), tokens))
         }
         Some(Token::LeftParen) => {
-            let (inner_expression, remaining_tokens) = parse_expression(tokens)?;
+            let (inner_expression, remaining_tokens) = parse_expression(tokens, 0)?;
             tokens = remaining_tokens;
 
-            // TODO: refactor this match into a try_consume function and use above for semi colon
-            match tokens.front() {
-                Some(Token::RightParen) => {
-                    tokens.pop_front();
-                    Ok((inner_expression, tokens))
-                }
-                _ => Err(error::ParsingError::ExpectedToken(String::from(")"))),
-            }
+            tokens = try_consume(tokens, Token::RightParen)?;
+
+            Ok((inner_expression, tokens))
         }
-        _ => {
-            dbg!(tokens);
-            Err(error::ParsingError::ExpectedExpression)
-        }
+        _ => Err(error::ParsingError::ExpectedExpression),
     }
 }
 
@@ -89,4 +122,17 @@ fn parse_literal(literal: &str) -> Result<expressions::Literal, error::ParsingEr
     }
 
     Err(error::ParsingError::Literal(String::from(literal)))
+}
+
+fn try_consume(
+    mut tokens: VecDeque<Token>,
+    expected: Token,
+) -> Result<VecDeque<Token>, error::ParsingError> {
+    match tokens.pop_front() {
+        Some(token) if token == expected => Ok(tokens),
+        _ => Err(error::ParsingError::ExpectedToken(format!(
+            "{:?}",
+            expected
+        ))),
+    }
 }

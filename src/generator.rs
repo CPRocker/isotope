@@ -1,7 +1,7 @@
 use crate::{
     error,
     parser::{
-        expressions::{Expression, Literal},
+        expressions::{BinaryExpression, Expression, Literal},
         statements::{Program, Statement},
     },
 };
@@ -37,6 +37,11 @@ fn generate_expression(expression: Expression) -> String {
     match expression {
         Expression::Literal(literal_type) => match literal_type {
             Literal::IntLiteral { value } => format!("    push dword {}\n", value),
+        },
+        Expression::Binary(binary_expression) => match binary_expression {
+            BinaryExpression::Additive(left, op, right) => {
+                todo!()
+            }
         },
     }
 }

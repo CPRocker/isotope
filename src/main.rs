@@ -31,22 +31,23 @@ fn main() -> Result<(), error::Error> {
     let tokens = tokenizer::tokenize(contents)?;
 
     let program = parser::parse(tokens.into())?;
+    dbg!(program);
 
-    let output = generator::generate(program)?;
+    // let output = generator::generate(program)?;
 
-    let file_name = isotope_file_path.file_stem().unwrap().to_string_lossy();
-    let asm_file_path = &format!("output/{}.asm", file_name);
-    let obj_file_path = &format!("output/{}.obj", file_name);
-    let exe_file_path = &format!("output/{}.exe", file_name);
+    // let file_name = isotope_file_path.file_stem().unwrap().to_string_lossy();
+    // let asm_file_path = &format!("output/{}.asm", file_name);
+    // let obj_file_path = &format!("output/{}.obj", file_name);
+    // let exe_file_path = &format!("output/{}.exe", file_name);
 
-    let _ = fs::write(asm_file_path, output);
+    // let _ = fs::write(asm_file_path, output);
 
-    if cfg!(target_os = "windows") {
-        assemble_windows(asm_file_path, obj_file_path)?;
-        link_windows(obj_file_path, exe_file_path)?;
-    } else {
-        todo!();
-    };
+    // if cfg!(target_os = "windows") {
+    //     assemble_windows(asm_file_path, obj_file_path)?;
+    //     link_windows(obj_file_path, exe_file_path)?;
+    // } else {
+    //     todo!();
+    // };
 
     Ok(())
 }
