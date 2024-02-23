@@ -10,6 +10,8 @@ pub fn tokenize(content: String) -> Result<Vec<tokens::Token>, error::Tokenizati
         let mut character = content.chars().nth(current_idx).unwrap();
 
         match character {
+            '(' => tokens.push(tokens::Token::LeftParen),
+            ')' => tokens.push(tokens::Token::RightParen),
             '-' => tokens.push(tokens::Token::Minus),
             '+' => tokens.push(tokens::Token::Plus),
             ';' => tokens.push(tokens::Token::Semi),

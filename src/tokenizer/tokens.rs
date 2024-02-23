@@ -1,12 +1,18 @@
 #[derive(Debug)]
 pub enum Token {
+    // compiler-time
     Eof,
-    Identifier(String),
-    Literal(String),
+    // single character
+    LeftParen,
+    RightParen,
     Minus,
     Plus,
-    Return,
-    Semi,
     Slash,
     Star,
+    Semi,
+    // keywords
+    Return,
+    // terminals
+    Identifier(String),
+    Literal(String),
 }

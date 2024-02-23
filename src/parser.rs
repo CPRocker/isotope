@@ -33,13 +33,12 @@ fn parse_statement(
         Some(Token::Return) => {
             tokens.pop_front();
 
-            let expression: expressions::Expression;
-            (expression, tokens) = parse_expression(tokens)?;
+            let (expression, remaining_tokens) = parse_expression(tokens)?;
+            tokens = remaining_tokens;
 
             match tokens.front() {
                 Some(Token::Semi) => {
                     tokens.pop_front();
-
                     Ok((statements::Statement::Return { expression }, tokens))
                 }
                 _ => Err(error::ParsingError::ExpectedToken(String::from(";"))),
@@ -60,7 +59,23 @@ fn parse_expression(
             let literal = parse_literal(&value)?;
             Ok((expressions::Expression::Literal(literal), tokens))
         }
-        _ => Err(error::ParsingError::ExpectedExpression),
+        Some(Token::LeftParen) => {
+            let (inner_expression, remaining_tokens) = parse_expression(tokens)?;
+            tokens = remaining_tokens;
+
+            // TODO: refactor this match into a try_consume function and use above for semi colon
+            match tokens.front() {
+                Some(Token::RightParen) => {
+                    tokens.pop_front();
+                    Ok((inner_expression, tokens))
+                }
+                _ => Err(error::ParsingError::ExpectedToken(String::from(")"))),
+            }
+        }
+        _ => {
+            dbg!(tokens);
+            Err(error::ParsingError::ExpectedExpression)
+        }
     }
 }
 
