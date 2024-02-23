@@ -7,7 +7,7 @@ pub enum Expression {
 #[derive(Debug)]
 pub enum BinaryExpression {
     Additive(Box<Expression>, BinaryOperator, Box<Expression>),
-    // Multiplicative(Box<Expression>, BinaryOperator, Box<Expression>),
+    Multiplicative(Box<Expression>, BinaryOperator, Box<Expression>),
 }
 
 #[derive(Debug)]

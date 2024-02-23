@@ -4,7 +4,7 @@ use std::collections::VecDeque;
 
 use crate::{error, tokenizer::tokens::Token};
 
-use self::expressions::{BinaryOperator, Expression};
+use self::expressions::BinaryOperator;
 
 pub mod expressions;
 pub mod statements;
@@ -58,11 +58,13 @@ fn parse_expression(
 
     while let Some(token) = tokens.front() {
         match token {
-            Token::Plus | Token::Minus => {
+            Token::Plus | Token::Minus | Token::Star | Token::Slash => {
                 let operator_token = tokens.pop_front().unwrap();
                 let operator = match operator_token {
                     Token::Plus => BinaryOperator::Add,
                     Token::Minus => BinaryOperator::Sub,
+                    Token::Star => BinaryOperator::Mul,
+                    Token::Slash => BinaryOperator::Div,
                     _ => unreachable!(),
                 };
 
@@ -82,7 +84,13 @@ fn parse_expression(
                             Box::new(right_expression),
                         ))
                     }
-                    _ => unreachable!(),
+                    BinaryOperator::Mul | BinaryOperator::Div => expressions::Expression::Binary(
+                        expressions::BinaryExpression::Multiplicative(
+                            Box::new(left_expression),
+                            operator,
+                            Box::new(right_expression),
+                        ),
+                    ),
                 };
             }
             _ => break,

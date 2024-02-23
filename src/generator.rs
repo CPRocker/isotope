@@ -42,6 +42,9 @@ fn generate_expression(expression: Expression) -> String {
             BinaryExpression::Additive(left, op, right) => {
                 todo!()
             }
+            BinaryExpression::Multiplicative(left, op, right) => {
+                todo!()
+            }
         },
     }
 }
