@@ -13,3 +13,8 @@ main:
     pop rax
     ret
 
+    ; return
+    push dword 0
+    pop rax
+    ret
+

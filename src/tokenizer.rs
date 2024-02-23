@@ -52,5 +52,7 @@ pub fn tokenize(content: String) -> Result<Vec<tokens::Token>, error::Tokenizati
         current_idx += 1;
     }
 
+    tokens.push(tokens::Token::EOF);
+
     Ok(tokens)
 }

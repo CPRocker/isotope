@@ -11,19 +11,19 @@ use std::process::Command;
 fn main() -> Result<(), error::Error> {
     let args: Vec<String> = env::args().collect();
     if args.len() != 2 {
-        return Err(error::Error::UsageError);
+        return Err(error::Error::Usage);
     }
 
     let input_file_path_arg = args.get(1).unwrap();
     let isotope_file_path = Path::new(input_file_path_arg);
     if isotope_file_path.is_dir() {
-        return Err(error::Error::UsageError);
+        return Err(error::Error::Usage);
     }
     if isotope_file_path.extension().is_none()
         || (isotope_file_path.extension().unwrap() != "isotope"
             && isotope_file_path.extension().unwrap() != "⚛️")
     {
-        return Err(error::Error::FileExtensionError);
+        return Err(error::Error::FileExtension);
     }
 
     let contents = fs::read_to_string(isotope_file_path)?;

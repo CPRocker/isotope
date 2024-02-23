@@ -7,14 +7,20 @@ use crate::{error, tokenizer::tokens::Token};
 pub mod expressions;
 pub mod statements;
 
+const END_STATEMENT: statements::Statement = statements::Statement::Return {
+    expression: expressions::Expression::Literal(expressions::Literal::IntLiteral { value: 0 }),
+};
+
 pub fn parse(mut tokens: VecDeque<Token>) -> Result<statements::Program, error::ParsingError> {
     let mut program = statements::Program::new();
 
-    while !tokens.is_empty() {
-        let token_result = parse_statement(tokens)?;
-        tokens = token_result.1;
-
-        program.add_statement(token_result.0);
+    while let Some(token) = tokens.front() {
+        let (statement, remaining_tokens) = match token {
+            Token::EOF => (END_STATEMENT, VecDeque::new()),
+            _ => parse_statement(tokens)?,
+        };
+        program.add_statement(statement);
+        tokens = remaining_tokens;
     }
 
     Ok(program)
@@ -42,7 +48,7 @@ fn parse_statement(
         Some(_) => Err(error::ParsingError::UnexpectedToken(
             tokens.pop_front().unwrap(),
         )),
-        None => Err(error::ParsingError::StatementError),
+        None => Err(error::ParsingError::Statement),
     }
 }
 
@@ -67,5 +73,5 @@ fn parse_literal(literal: &str) -> Result<expressions::Literal, error::ParsingEr
         });
     }
 
-    Err(error::ParsingError::InvalidLiteral(String::from(literal)))
+    Err(error::ParsingError::Literal(String::from(literal)))
 }

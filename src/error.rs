@@ -3,17 +3,17 @@ use crate::tokenizer::tokens::Token;
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("Usage: isotope `file`")]
-    UsageError,
+    Usage,
     #[error("File extension must be `.isotope` or `⚛️`")]
-    FileExtensionError,
+    FileExtension,
     #[error(transparent)]
-    IOError(#[from] std::io::Error),
+    IO(#[from] std::io::Error),
     #[error(transparent)]
-    TokenizationError(#[from] TokenizationError),
+    Tokenization(#[from] TokenizationError),
     #[error(transparent)]
-    ParsingError(#[from] ParsingError),
+    Parsing(#[from] ParsingError),
     #[error(transparent)]
-    CodeGenerationError(#[from] CodeGenerationError),
+    CodeGeneration(#[from] CodeGenerationError),
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -31,11 +31,11 @@ pub enum ParsingError {
     #[error("Unexpected token: `{0:?}`")]
     UnexpectedToken(Token),
     #[error("Unable to parse statement")]
-    StatementError,
+    Statement,
     #[error("Expected expression")]
     ExpectedExpression,
     #[error("Unable to parse literal: `{0:?}`")]
-    InvalidLiteral(String),
+    Literal(String),
 }
 
 #[derive(thiserror::Error, Debug)]
