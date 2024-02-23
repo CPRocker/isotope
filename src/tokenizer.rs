@@ -1,6 +1,8 @@
+use crate::error;
+
 pub mod tokens;
 
-pub fn tokenize(content: String) -> Vec<tokens::Token> {
+pub fn tokenize(content: String) -> Result<Vec<tokens::Token>, error::TokenizationError> {
     let mut tokens = Vec::new();
 
     let mut current_idx = 0;
@@ -18,7 +20,7 @@ pub fn tokenize(content: String) -> Vec<tokens::Token> {
 
                 current_idx += 1;
                 if current_idx > content.len() {
-                    panic!("Unknown number");
+                    return Err(error::TokenizationError::InvalidNumber);
                 }
 
                 character = content.chars().nth(current_idx).unwrap_or_default();
@@ -33,7 +35,7 @@ pub fn tokenize(content: String) -> Vec<tokens::Token> {
 
                 current_idx += 1;
                 if current_idx > content.len() {
-                    panic!("Unknown identifier");
+                    return Err(error::TokenizationError::InvalidIdentifier);
                 }
 
                 character = content.chars().nth(current_idx).unwrap();
@@ -50,5 +52,5 @@ pub fn tokenize(content: String) -> Vec<tokens::Token> {
         current_idx += 1;
     }
 
-    tokens
+    Ok(tokens)
 }

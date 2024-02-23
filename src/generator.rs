@@ -1,9 +1,12 @@
-use crate::parser::{
-    expressions::{Expression, Literal},
-    statements::{Program, Statement},
+use crate::{
+    error,
+    parser::{
+        expressions::{Expression, Literal},
+        statements::{Program, Statement},
+    },
 };
 
-pub fn generate(program: Program) -> String {
+pub fn generate(program: Program) -> Result<String, error::CodeGenerationError> {
     let mut output = String::from("section .text\n    global main\n\n; program starts\nmain:\n");
 
     for statement in program {
@@ -11,7 +14,7 @@ pub fn generate(program: Program) -> String {
         output.push('\n');
     }
 
-    output
+    Ok(output)
 }
 
 fn generate_statement(statement: Statement) -> String {

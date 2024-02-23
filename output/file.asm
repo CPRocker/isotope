@@ -4,7 +4,7 @@ section .text
 ; program starts
 main:
     ; return
-    push dword 69
+    push dword 0
     pop rax
     ret
 
