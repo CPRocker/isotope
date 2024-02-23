@@ -16,7 +16,7 @@ pub fn parse(mut tokens: VecDeque<Token>) -> Result<statements::Program, error::
 
     while let Some(token) = tokens.front() {
         let (statement, remaining_tokens) = match token {
-            Token::EOF => (END_STATEMENT, VecDeque::new()),
+            Token::Eof => (END_STATEMENT, VecDeque::new()),
             _ => parse_statement(tokens)?,
         };
         program.add_statement(statement);

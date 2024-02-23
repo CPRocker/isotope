@@ -22,6 +22,8 @@ pub enum TokenizationError {
     InvalidNumber,
     #[error("Invalid identifier")]
     InvalidIdentifier,
+    #[error("Unrecognized character: {0}")]
+    UnrecognizedCharacter(char),
 }
 
 #[derive(thiserror::Error, Debug)]

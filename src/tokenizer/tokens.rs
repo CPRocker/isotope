@@ -1,8 +1,12 @@
 #[derive(Debug)]
 pub enum Token {
-    EOF,
+    Eof,
     Identifier(String),
     Literal(String),
+    Minus,
+    Plus,
     Return,
     Semi,
+    Slash,
+    Star,
 }
