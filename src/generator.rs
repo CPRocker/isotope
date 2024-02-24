@@ -1,7 +1,7 @@
 use crate::{
     error,
     parser::{
-        expressions::{BinaryExpression, Expression, Literal},
+        expressions::{BinaryExpression, BinaryOperator, Expression, Literal},
         statements::{Program, Statement},
     },
 };
@@ -38,13 +38,52 @@ fn generate_expression(expression: Expression) -> String {
         Expression::Literal(literal_type) => match literal_type {
             Literal::IntLiteral { value } => format!("    push dword {}\n", value),
         },
-        Expression::Binary(binary_expression) => match binary_expression {
-            BinaryExpression::Additive(left, op, right) => {
-                todo!()
-            }
-            BinaryExpression::Multiplicative(left, op, right) => {
-                todo!()
-            }
-        },
+        Expression::Binary(binary_expression) => {
+            let mut output = String::new();
+
+            match binary_expression {
+                BinaryExpression::Additive(left, op, right) => match op {
+                    BinaryOperator::Add => {
+                        output.push_str(&generate_expression(*left));
+                        output.push_str(&generate_expression(*right));
+                        output.push_str("    pop rbx\n");
+                        output.push_str("    pop rax\n");
+                        output.push_str("    add rax, rbx\n");
+                        output.push_str("    push rax\n");
+                    }
+                    BinaryOperator::Sub => {
+                        output.push_str(&generate_expression(*left));
+                        output.push_str(&generate_expression(*right));
+                        output.push_str("    pop rbx\n");
+                        output.push_str("    pop rax\n");
+                        output.push_str("    sub rax, rbx\n");
+                        output.push_str("    push rax\n");
+                    }
+                    _ => unreachable!(),
+                },
+                BinaryExpression::Multiplicative(left, op, right) => match op {
+                    BinaryOperator::Mul => {
+                        output.push_str(&generate_expression(*left));
+                        output.push_str(&generate_expression(*right));
+                        output.push_str("    pop rbx\n");
+                        output.push_str("    pop rax\n");
+                        output.push_str("    imul rax, rbx\n");
+                        output.push_str("    push rax\n");
+                    }
+                    BinaryOperator::Div => {
+                        output.push_str(&generate_expression(*left));
+                        output.push_str(&generate_expression(*right));
+                        output.push_str("    pop rbx\n");
+                        output.push_str("    pop rax\n");
+                        output.push_str("    xor rdx, rdx\n");
+                        output.push_str("    idiv rbx\n");
+                        output.push_str("    push rax\n");
+                    }
+                    _ => unreachable!(),
+                },
+            };
+
+            output
+        }
     }
 }
