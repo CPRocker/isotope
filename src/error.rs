@@ -18,6 +18,8 @@ pub enum Error {
 
 #[derive(thiserror::Error, Debug)]
 pub enum TokenizationError {
+    #[error("Block comment not closed")]
+    UnclosedBlockComment,
     #[error("Invalid number")]
     InvalidNumber,
     #[error("Invalid identifier")]
