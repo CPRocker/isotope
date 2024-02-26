@@ -8,7 +8,13 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-fn main() -> Result<(), error::Error> {
+fn main() {
+    if let Err(e) = run() {
+        println!("{}", e);
+    }
+}
+
+fn run() -> Result<(), error::Error> {
     let args: Vec<String> = env::args().collect();
     if args.len() != 2 {
         return Err(error::Error::Usage);
