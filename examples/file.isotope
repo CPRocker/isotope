@@ -1,9 +1,13 @@
-// ret 10*(20-3)/(2*5)+(25-50)-135;
-ret 10;
-return 18;
+// This is a single line comment
 
 /*
-*
-ret 123;
-**
-*/ret 5 / 2;
+    This is a block comment
+*/
+
+let x = 10;
+let y = 11;
+return y;
+
+/*let x = 10 + 1;
+let y = 12;
+return x;*/

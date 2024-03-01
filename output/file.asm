@@ -3,24 +3,23 @@ section .text
 
 ; program starts
 main:
-    ; return
-    push dword 10
-    pop rax
-    ret
+    ; declare var x
+    push qword 10
+
+    ; declare var y
+    push qword 11
 
     ; return
-    push dword 5
-    push dword 2
-    pop rbx
-    pop rax
-    xor rdx, rdx
-    idiv rbx
+    ; get y
+    mov rax, [rsp + 0]
     push rax
     pop rax
+    add rsp, 16
     ret
 
     ; return
-    push dword 0
+    push qword 0
     pop rax
+    add rsp, 0
     ret
 

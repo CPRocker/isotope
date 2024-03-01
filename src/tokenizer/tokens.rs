@@ -1,8 +1,9 @@
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     // compiler-time
     Eof,
     // single character
+    Equals,
     LeftParen,
     RightParen,
     Minus,
@@ -11,6 +12,7 @@ pub enum Token {
     Star,
     Semi,
     // keywords
+    Let,
     Return,
     // terminals
     Identifier(String),

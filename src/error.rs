@@ -38,9 +38,16 @@ pub enum ParsingError {
     Statement,
     #[error("Expected expression")]
     ExpectedExpression,
-    #[error("Unable to parse literal: `{0:?}`")]
+    #[error("Unable to parse literal: `{0}`")]
     Literal(String),
+    #[error("Expected identifier")]
+    ExpectedIdentifier,
+    #[error("Undeclared identifier: `{0}`")]
+    UndeclaredIndentifier(String),
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum CodeGenerationError {}
+pub enum CodeGenerationError {
+    #[error("Undeclared variable")]
+    UndeclaredVariable,
+}

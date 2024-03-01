@@ -10,6 +10,7 @@ pub fn tokenize(content: String) -> Result<Vec<tokens::Token>, error::Tokenizati
         let mut character = content.chars().nth(current_idx).unwrap();
 
         match character {
+            '=' => tokens.push(tokens::Token::Equals),
             '(' => tokens.push(tokens::Token::LeftParen),
             ')' => tokens.push(tokens::Token::RightParen),
             '-' => tokens.push(tokens::Token::Minus),
@@ -86,7 +87,8 @@ pub fn tokenize(content: String) -> Result<Vec<tokens::Token>, error::Tokenizati
                     current_idx -= 1;
 
                     let token = match word.as_str() {
-                        "ret" => tokens::Token::Return,
+                        "let" => tokens::Token::Let,
+                        "return" => tokens::Token::Return,
                         _ => tokens::Token::Identifier(word),
                     };
                     tokens.push(token);

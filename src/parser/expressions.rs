@@ -1,6 +1,7 @@
 #[derive(Debug)]
 pub enum Expression {
     Binary(BinaryExpression),
+    Identifier(String),
     Literal(Literal),
 }
 

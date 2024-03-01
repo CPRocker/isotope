@@ -27,5 +27,11 @@ impl IntoIterator for Program {
 
 #[derive(Debug)]
 pub enum Statement {
-    Return { expression: expressions::Expression },
+    Return {
+        expression: expressions::Expression,
+    },
+    VariableDeclaration {
+        identifier: String,
+        expression: expressions::Expression,
+    },
 }

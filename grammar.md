@@ -2,7 +2,8 @@ $$
 \begin{align}
 [\text{Program}] &\to [\text{Statement}]^* \\
 [\text{Statement}] &\to \begin{cases}
-    \text{ret} [\text{Expression}]; \\
+    \text{return} [\text{Expression}]; \\
+    \text{let} [\text{Identifier}] = [\text{Expression}]; \\
 \end{cases} \\
 [\text{Expression}] &\to \begin{cases}
     [\text{BinaryExpression}] \\
@@ -16,6 +17,7 @@ $$
 [\text{AdditiveBinaryExpression}] &\to [\text{PrimaryExpression}] op [\text{PrimaryExpression}] \\
 [\text{PrimaryExpression}] &\to \begin{cases}
     ([\text{Expression}]) \\
+    [\text{Identifier}] \\
     [\text{Literal}] \\
 \end{cases} \\
 [\text{Literal}] &\to \begin{cases}
