@@ -3,10 +3,56 @@ use std::collections::HashMap;
 use crate::{
     error::{self, CodeGenerationError},
     parser::{
+        self,
         expressions::{BinaryExpression, BinaryOperator, Expression, Literal},
-        statements::{Program, Statement},
+        statements::Statement,
     },
 };
+
+#[derive(Debug)]
+struct Program {
+    output: String,
+    stack_frame: StackFrame,
+}
+
+impl Program {
+    const REGISTER_SIZE: usize = 8;
+
+    pub fn new() -> Self {
+        Self {
+            output: String::new(),
+            stack_frame: StackFrame::new(),
+        }
+    }
+
+    pub fn append(&mut self, string: &str) {
+        self.output.push_str(string);
+    }
+
+    pub fn output(&self) -> String {
+        self.output.clone()
+    }
+
+    pub fn end_scope(&mut self) {
+        self.append(&format!("    add rsp, {}\n", self.stack_frame.size()));
+        self.stack_frame.clear();
+    }
+
+    pub fn push(&mut self, register: &str) {
+        self.append(&format!("    push {}\n", register));
+        self.stack_frame.push(Self::REGISTER_SIZE);
+    }
+
+    pub fn push_literal(&mut self, value: &str) {
+        self.append(&format!("    push qword {}\n", value));
+        self.stack_frame.push(Self::REGISTER_SIZE);
+    }
+
+    pub fn pop(&mut self, register: &str) {
+        self.append(&format!("    pop {}\n", register));
+        self.stack_frame.pop(Self::REGISTER_SIZE);
+    }
+}
 
 #[derive(Debug)]
 struct StackFrame {
@@ -15,6 +61,8 @@ struct StackFrame {
 }
 
 impl StackFrame {
+    const VARIABLE_SIZE: usize = 8;
+
     pub fn new() -> Self {
         Self {
             stack_pointer: 0,
@@ -23,23 +71,18 @@ impl StackFrame {
     }
 
     pub fn size(&self) -> usize {
-        if let Some(max_offset) = self.variable_locations.values().max() {
-            max_offset + 8
-        } else {
-            0
-        }
+        self.stack_pointer
     }
 
     pub fn allocate_variable(&mut self, identifier: String) {
-        let variable_size = 8;
         self.variable_locations
-            .insert(identifier, self.stack_pointer - variable_size);
+            .insert(identifier, self.stack_pointer - Self::VARIABLE_SIZE);
     }
 
     pub fn get_variable_offset(&self, identifier: String) -> Option<usize> {
         self.variable_locations
             .get(&identifier)
-            .map(|offset| self.stack_pointer - offset - 8)
+            .map(|offset| self.stack_pointer - offset - Self::VARIABLE_SIZE)
     }
 
     pub fn push(&mut self, size: usize) {
@@ -56,142 +99,127 @@ impl StackFrame {
     }
 }
 
-pub fn generate(program: Program) -> Result<String, error::CodeGenerationError> {
-    let mut output = String::from("section .text\n    global main\n\n; program starts\nmain:\n");
-    let mut stack_frame = StackFrame::new();
+pub fn generate(
+    program: parser::statements::Program,
+) -> Result<String, error::CodeGenerationError> {
+    let mut output_program = Program::new();
+    output_program.append("section .text\n    global main\n\n; program starts\nmain:\n");
 
     for statement in program {
-        output.push_str(generate_statement(&mut stack_frame, statement)?.as_str());
-        output.push('\n');
+        output_program = generate_statement(output_program, statement)?;
+        output_program.append("\n");
     }
 
-    Ok(output)
+    Ok(output_program.output())
 }
 
 fn generate_statement(
-    stack_frame: &mut StackFrame,
+    program: Program,
     statement: Statement,
-) -> Result<String, CodeGenerationError> {
+) -> Result<Program, CodeGenerationError> {
     match statement {
-        Statement::Return { expression } => generate_return(stack_frame, expression),
+        Statement::Return { expression } => generate_return(program, expression),
         Statement::VariableDeclaration {
             identifier,
             expression,
-        } => generate_variable_declaration(stack_frame, identifier, expression),
+        } => generate_variable_declaration(program, identifier, expression),
     }
 }
 
 fn generate_return(
-    stack_frame: &mut StackFrame,
+    mut program: Program,
     expression: Expression,
-) -> Result<String, CodeGenerationError> {
-    let mut output = String::from("    ; return\n");
+) -> Result<Program, CodeGenerationError> {
+    program.append("    ; return\n");
 
-    output.push_str(generate_expression(stack_frame, expression)?.as_str());
-    output.push_str("    pop rax\n");
-    stack_frame.pop(8);
-    output.push_str(&format!("    add rsp, {}\n", stack_frame.size()));
-    stack_frame.clear();
-    output.push_str("    ret\n");
+    program = generate_expression(program, expression)?;
+    program.pop("rax");
+    program.end_scope();
+    program.append("    ret\n");
 
-    Ok(output)
+    Ok(program)
 }
 
 fn generate_variable_declaration(
-    stack_frame: &mut StackFrame,
+    mut program: Program,
     identifier: String,
     expression: Expression,
-) -> Result<String, CodeGenerationError> {
-    let mut output = format!("    ; declare var {}\n", identifier);
+) -> Result<Program, CodeGenerationError> {
+    program.append(&format!("    ; declare var {}\n", identifier));
 
-    output.push_str(generate_expression(stack_frame, expression)?.as_str());
-    stack_frame.allocate_variable(identifier);
+    program = generate_expression(program, expression)?;
+    program.stack_frame.allocate_variable(identifier);
 
-    Ok(output)
+    Ok(program)
 }
 
 fn generate_expression(
-    stack_frame: &mut StackFrame,
+    mut program: Program,
     expression: Expression,
-) -> Result<String, CodeGenerationError> {
+) -> Result<Program, CodeGenerationError> {
     match expression {
         Expression::Binary(binary_expression) => {
-            let mut output = String::new();
-
             match binary_expression {
                 BinaryExpression::Additive(left, op, right) => match op {
                     BinaryOperator::Add => {
-                        output.push_str(&generate_expression(stack_frame, *left)?);
-                        output.push_str(&generate_expression(stack_frame, *right)?);
-                        output.push_str("    pop rbx\n");
-                        stack_frame.pop(8);
-                        output.push_str("    pop rax\n");
-                        stack_frame.pop(8);
-                        output.push_str("    add rax, rbx\n");
-                        output.push_str("    push rax\n");
-                        stack_frame.push(8);
+                        program = generate_expression(program, *left)?;
+                        program = generate_expression(program, *right)?;
+                        program.pop("rbx");
+                        program.pop("rax");
+                        program.append("    add rax, rbx\n");
+                        program.push("rax");
                     }
                     BinaryOperator::Sub => {
-                        output.push_str(&generate_expression(stack_frame, *left)?);
-                        output.push_str(&generate_expression(stack_frame, *right)?);
-                        output.push_str("    pop rbx\n");
-                        stack_frame.pop(8);
-                        output.push_str("    pop rax\n");
-                        stack_frame.pop(8);
-                        output.push_str("    sub rax, rbx\n");
-                        output.push_str("    push rax\n");
-                        stack_frame.push(8);
+                        program = generate_expression(program, *left)?;
+                        program = generate_expression(program, *right)?;
+                        program.pop("rbx");
+                        program.pop("rax");
+                        program.append("    sub rax, rbx\n");
+                        program.push("rax");
                     }
                     _ => unreachable!(),
                 },
                 BinaryExpression::Multiplicative(left, op, right) => match op {
                     BinaryOperator::Mul => {
-                        output.push_str(&generate_expression(stack_frame, *left)?);
-                        output.push_str(&generate_expression(stack_frame, *right)?);
-                        output.push_str("    pop rbx\n");
-                        stack_frame.pop(8);
-                        output.push_str("    pop rax\n");
-                        stack_frame.pop(8);
-                        output.push_str("    imul rax, rbx\n");
-                        output.push_str("    push rax\n");
-                        stack_frame.push(8);
+                        program = generate_expression(program, *left)?;
+                        program = generate_expression(program, *right)?;
+                        program.pop("rbx");
+                        program.pop("rax");
+                        program.append("    imul rax, rbx\n");
+                        program.push("rax");
                     }
                     BinaryOperator::Div => {
-                        output.push_str(&generate_expression(stack_frame, *left)?);
-                        output.push_str(&generate_expression(stack_frame, *right)?);
-                        output.push_str("    pop rbx\n");
-                        stack_frame.pop(8);
-                        output.push_str("    pop rax\n");
-                        stack_frame.pop(8);
-                        output.push_str("    xor rdx, rdx\n");
-                        output.push_str("    idiv rbx\n");
-                        output.push_str("    push rax\n");
-                        stack_frame.push(8);
+                        program = generate_expression(program, *left)?;
+                        program = generate_expression(program, *right)?;
+                        program.pop("rbx");
+                        program.pop("rax");
+                        program.append("    xor rdx, rdx\n");
+                        program.append("    idiv rbx\n");
+                        program.push("rax");
                     }
                     _ => unreachable!(),
                 },
             };
 
-            Ok(output)
+            Ok(program)
         }
         Expression::Identifier(identifier) => {
-            let mut output = format!("    ; get {}\n", identifier);
+            program.append(&format!("    ; get {}\n", identifier));
 
-            if let Some(offset) = stack_frame.get_variable_offset(identifier) {
-                output.push_str(&format!("    mov rax, [rsp + {}]\n", offset));
-                output.push_str("    push rax\n");
-                stack_frame.push(8);
+            if let Some(offset) = program.stack_frame.get_variable_offset(identifier) {
+                program.append(&format!("    mov rax, [rsp + {}]\n", offset));
+                program.push("rax");
 
-                Ok(output)
+                Ok(program)
             } else {
                 Err(CodeGenerationError::UndeclaredVariable)
             }
         }
         Expression::Literal(literal_type) => match literal_type {
             Literal::IntLiteral { value } => {
-                let output = format!("    push qword {}\n", value);
-                stack_frame.push(8);
-                Ok(output)
+                program.push_literal(&value.to_string());
+
+                Ok(program)
             }
         },
     }
