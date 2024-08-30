@@ -2,19 +2,85 @@ extern crate regex;
 
 use std::collections::{HashSet, VecDeque};
 
-use crate::{error, tokenizer::tokens::Token};
+use crate::{error, tokenizer::Token};
 
-use self::expressions::BinaryOperator;
+#[derive(Debug)]
+pub struct Program {
+    statements: Vec<Statement>,
+}
 
-pub mod expressions;
-pub mod statements;
+impl Program {
+    pub fn new() -> Self {
+        Self { statements: vec![] }
+    }
 
-const END_STATEMENT: statements::Statement = statements::Statement::Return {
-    expression: expressions::Expression::Literal(expressions::Literal::IntLiteral { value: 0 }),
+    pub fn add_statement(&mut self, statement: Statement) {
+        self.statements.push(statement);
+    }
+}
+
+impl IntoIterator for Program {
+    type Item = Statement;
+
+    type IntoIter = std::vec::IntoIter<Statement>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.statements.into_iter()
+    }
+}
+
+#[derive(Debug)]
+pub enum Statement {
+    Return {
+        expression: Expression,
+    },
+    VariableDeclaration {
+        identifier: String,
+        expression: Expression,
+    },
+}
+
+#[derive(Debug)]
+pub enum Expression {
+    Binary(BinaryExpression),
+    Identifier(String),
+    Literal(Literal),
+}
+
+#[derive(Debug)]
+pub enum BinaryExpression {
+    Additive(Box<Expression>, BinaryOperator, Box<Expression>),
+    Multiplicative(Box<Expression>, BinaryOperator, Box<Expression>),
+}
+
+#[derive(Debug)]
+pub enum BinaryOperator {
+    Add,
+    Sub,
+    Mul,
+    Div,
+}
+
+impl BinaryOperator {
+    pub fn get_precedence(&self) -> u8 {
+        match self {
+            BinaryOperator::Add | BinaryOperator::Sub => 1,
+            BinaryOperator::Mul | BinaryOperator::Div => 2,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum Literal {
+    IntLiteral { value: i64 },
+}
+
+const END_STATEMENT: Statement = Statement::Return {
+    expression: Expression::Literal(Literal::IntLiteral { value: 0 }),
 };
 
-pub fn parse(mut tokens: VecDeque<Token>) -> Result<statements::Program, error::ParsingError> {
-    let mut program = statements::Program::new();
+pub fn parse(mut tokens: VecDeque<Token>) -> Result<Program, error::ParsingError> {
+    let mut program = Program::new();
     let mut declared_vars: HashSet<String> = HashSet::new();
 
     while let Some(token) = tokens.front() {
@@ -32,7 +98,7 @@ pub fn parse(mut tokens: VecDeque<Token>) -> Result<statements::Program, error::
 fn parse_statement(
     mut tokens: VecDeque<Token>,
     declared_vars: &mut HashSet<String>,
-) -> Result<(statements::Statement, VecDeque<Token>), error::ParsingError> {
+) -> Result<(Statement, VecDeque<Token>), error::ParsingError> {
     match tokens.front() {
         Some(Token::Let) => {
             tokens.pop_front();
@@ -49,7 +115,7 @@ fn parse_statement(
             tokens = try_consume(tokens, Token::Semi)?;
 
             Ok((
-                statements::Statement::VariableDeclaration {
+                Statement::VariableDeclaration {
                     identifier,
                     expression,
                 },
@@ -64,7 +130,7 @@ fn parse_statement(
 
             tokens = try_consume(tokens, Token::Semi)?;
 
-            Ok((statements::Statement::Return { expression }, tokens))
+            Ok((Statement::Return { expression }, tokens))
         }
         Some(_) => Err(error::ParsingError::UnexpectedToken(
             tokens.pop_front().unwrap(),
@@ -87,7 +153,7 @@ fn parse_expression(
     mut tokens: VecDeque<Token>,
     declared_vars: &HashSet<String>,
     precedence: u8,
-) -> Result<(expressions::Expression, VecDeque<Token>), error::ParsingError> {
+) -> Result<(Expression, VecDeque<Token>), error::ParsingError> {
     let (mut left_expression, remaining_tokens) = parse_primary_expression(tokens, declared_vars)?;
     tokens = remaining_tokens;
 
@@ -114,19 +180,19 @@ fn parse_expression(
 
                 left_expression = match operator {
                     BinaryOperator::Add | BinaryOperator::Sub => {
-                        expressions::Expression::Binary(expressions::BinaryExpression::Additive(
+                        Expression::Binary(BinaryExpression::Additive(
                             Box::new(left_expression),
                             operator,
                             Box::new(right_expression),
                         ))
                     }
-                    BinaryOperator::Mul | BinaryOperator::Div => expressions::Expression::Binary(
-                        expressions::BinaryExpression::Multiplicative(
+                    BinaryOperator::Mul | BinaryOperator::Div => {
+                        Expression::Binary(BinaryExpression::Multiplicative(
                             Box::new(left_expression),
                             operator,
                             Box::new(right_expression),
-                        ),
-                    ),
+                        ))
+                    }
                 };
             }
             _ => break,
@@ -139,7 +205,7 @@ fn parse_expression(
 fn parse_primary_expression(
     mut tokens: VecDeque<Token>,
     declared_vars: &HashSet<String>,
-) -> Result<(expressions::Expression, VecDeque<Token>), error::ParsingError> {
+) -> Result<(Expression, VecDeque<Token>), error::ParsingError> {
     match tokens.pop_front() {
         Some(Token::LeftParen) => {
             let (inner_expression, remaining_tokens) = parse_expression(tokens, declared_vars, 0)?;
@@ -150,22 +216,22 @@ fn parse_primary_expression(
             Ok((inner_expression, tokens))
         }
         Some(Token::Identifier(identifier)) => match declared_vars.contains(&identifier) {
-            true => Ok((expressions::Expression::Identifier(identifier), tokens)),
+            true => Ok((Expression::Identifier(identifier), tokens)),
             false => Err(error::ParsingError::UndeclaredIndentifier(identifier)),
         },
         Some(Token::Literal(value)) => {
             let literal = parse_literal(&value)?;
-            Ok((expressions::Expression::Literal(literal), tokens))
+            Ok((Expression::Literal(literal), tokens))
         }
         _ => Err(error::ParsingError::ExpectedExpression),
     }
 }
 
-fn parse_literal(literal: &str) -> Result<expressions::Literal, error::ParsingError> {
+fn parse_literal(literal: &str) -> Result<Literal, error::ParsingError> {
     let int_re = regex::Regex::new(r"\d+").unwrap();
 
     if int_re.is_match(literal) {
-        return Ok(expressions::Literal::IntLiteral {
+        return Ok(Literal::IntLiteral {
             value: literal.parse::<i64>().unwrap(),
         });
     }

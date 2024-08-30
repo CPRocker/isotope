@@ -1,7 +1,4 @@
-mod error;
-mod generator;
-mod parser;
-mod tokenizer;
+mod lib;
 
 use std::env;
 use std::fs;
@@ -14,10 +11,10 @@ fn main() {
     }
 }
 
-fn run() -> Result<(), error::Error> {
+fn run() -> Result<(), lib::error::Error> {
     let args: Vec<String> = env::args().collect();
     if args.len() != 2 {
-        return Err(error::Error::Usage);
+        return Err(lib::error::Error::Usage);
     }
 
     let input_file_path_arg = args.get(1).unwrap();
