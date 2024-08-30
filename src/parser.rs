@@ -2,7 +2,7 @@ extern crate regex;
 
 use std::collections::{HashSet, VecDeque};
 
-use crate::{error, tokenizer::Token};
+use crate::{error, lexer::Token};
 
 #[derive(Debug)]
 pub struct Program {

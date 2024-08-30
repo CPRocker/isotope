@@ -21,7 +21,7 @@ pub enum Token {
     Literal(String),
 }
 
-pub fn tokenize(content: String) -> Result<Vec<Token>, TokenizationError> {
+pub fn lex(content: String) -> Result<Vec<Token>, TokenizationError> {
     let mut tokens = Vec::new();
 
     let mut current_idx = 0;
