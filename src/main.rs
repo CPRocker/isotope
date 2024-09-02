@@ -1,13 +1,7 @@
-// mod lib;
-extern crate clap;
-extern crate miette;
-extern crate thiserror;
-
 use clap::{Parser, ValueEnum};
 use miette::{Diagnostic, Result};
 use thiserror::Error;
 
-use std::fmt::Display;
 use std::fs;
 use std::path::PathBuf;
 
@@ -25,6 +19,7 @@ struct Cli {
 enum Command {
     Tokenize,
     Parse,
+    Generate,
     Compile,
 }
 
@@ -62,15 +57,36 @@ fn main() -> Result<()> {
     let file_contents = fs::read_to_string(&args.file_path)
         .map_err(|source| CliError::FileReadError { file_path, source })?;
 
-    println!("{}", file_contents);
-
     match args.command {
-        Command::Tokenize => todo!(),
-        Command::Parse => todo!(),
-        Command::Compile => todo!(),
+        Command::Tokenize => lex(&file_contents),
+        Command::Parse => parse(&file_contents),
+        Command::Generate => generate(&file_contents),
+        Command::Compile => compile(&file_contents),
     }
+}
 
-    Ok(())
+fn lex(file_contents: &str) -> Result<()> {
+    let lexer = isotope::lexer::Lexer::new(file_contents);
+
+    todo!()
+}
+
+fn parse(file_contents: &str) -> Result<()> {
+    let parser = isotope::parser::Parser::new(file_contents);
+
+    todo!()
+}
+
+fn generate(file_contents: &str) -> Result<()> {
+    let generator = isotope::generator::Generator::new(file_contents);
+
+    todo!()
+}
+
+fn compile(file_contents: &str) -> Result<()> {
+    let compiler = isotope::compiler::Compiler::new(file_contents);
+
+    todo!()
 }
 
 // fn run() -> Result<(), lib::error::Error> {
