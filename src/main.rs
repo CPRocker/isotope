@@ -1,5 +1,5 @@
 use clap::{Parser, ValueEnum};
-use miette::{Diagnostic, Result};
+use miette::{Diagnostic, IntoDiagnostic, Result};
 use thiserror::Error;
 
 use std::fs;
@@ -17,7 +17,7 @@ struct Cli {
 
 #[derive(ValueEnum, Clone)]
 enum Command {
-    Tokenize,
+    Lex,
     Parse,
     Generate,
     Compile,
@@ -58,7 +58,7 @@ fn main() -> Result<()> {
         .map_err(|source| CliError::FileReadError { file_path, source })?;
 
     match args.command {
-        Command::Tokenize => lex(&file_contents),
+        Command::Lex => lex(&file_contents),
         Command::Parse => parse(&file_contents),
         Command::Generate => generate(&file_contents),
         Command::Compile => compile(&file_contents),
@@ -68,7 +68,12 @@ fn main() -> Result<()> {
 fn lex(file_contents: &str) -> Result<()> {
     let lexer = isotope::lexer::Lexer::new(file_contents);
 
-    todo!()
+    for token in lexer {
+        let token = token.into_diagnostic()?;
+        println!("{:?}", token);
+    }
+
+    Ok(())
 }
 
 fn parse(file_contents: &str) -> Result<()> {
