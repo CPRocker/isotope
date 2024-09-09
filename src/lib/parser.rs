@@ -1,261 +1,398 @@
-use crate::lexer::Lexer;
+use std::{fmt::Display, iter::Peekable};
+
+use miette::{Diagnostic, Result, SourceSpan};
+use thiserror::Error;
+
+use crate::lexer::{Lexer, LexerError, Token, TokenKind};
+
+#[derive(Error, Diagnostic, Debug, Clone)]
+pub enum ParserError {
+    LexerError(#[from] LexerError),
+    UnexpectedEOF {
+        #[source_code]
+        src: String,
+    },
+    UnexpectedToken {
+        #[source_code]
+        src: String,
+        #[label = "here"]
+        span: SourceSpan,
+    },
+    ExpectedIdentifier {
+        #[source_code]
+        src: String,
+        #[label = "here"]
+        span: SourceSpan,
+    },
+}
+
+impl From<&LexerError> for ParserError {
+    fn from(err: &LexerError) -> ParserError {
+        ParserError::LexerError(err.clone())
+    }
+}
+
+impl std::fmt::Display for ParserError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ParserError::LexerError(_) => write!(f, "Lexer error"),
+            ParserError::UnexpectedEOF { .. } => write!(f, "Unexpected EOF"),
+            ParserError::UnexpectedToken { src, span } => {
+                let token = &src[span.offset()..span.offset() + span.len()];
+                write!(f, "Unexpected token: `{}`", token)
+            }
+            ParserError::ExpectedIdentifier { .. } => write!(f, "Expected identifier"),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum Statement<'de> {
+    Nop,
+    LetDeclaration(Identifier<'de>, Expr<'de>),
+    Assignment(Identifier<'de>, Expr<'de>),
+    Return(Expr<'de>),
+    Expr(Expr<'de>),
+}
+
+impl<'de> Display for Statement<'de> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Statement::Nop => write!(f, "nop;"),
+            Statement::LetDeclaration(ident, expr) => write!(f, "let {} = {};", ident, expr),
+            Statement::Assignment(ident, expr) => write!(f, "{} = {};", ident, expr),
+            Statement::Return(expr) => write!(f, "return {};", expr),
+            Statement::Expr(expr) => write!(f, "{}", expr),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Identifier<'de> {
+    name: &'de str,
+}
+
+impl<'de> Display for Identifier<'de> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum Expr<'de> {
+    Atom(Atom<'de>),
+    Cons(Op, Vec<Expr<'de>>),
+}
+
+impl<'de> Display for Expr<'de> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Expr::Atom(Atom::Identifier(s)) => write!(f, "{}", s),
+            Expr::Atom(Atom::Number(n)) => write!(f, "{}", n),
+            Expr::Atom(Atom::String(s)) => write!(f, "\"{}\"", s),
+            Expr::Cons(op, args) => {
+                write!(f, "({}", op)?;
+                for arg in args {
+                    write!(f, " {}", arg)?;
+                }
+                write!(f, ")")
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Atom<'de> {
+    Identifier(&'de str),
+    Number(f64),
+    String(&'de str),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Op {
+    Assign,
+    Field,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Pos,
+    Neg,
+}
+
+impl Display for Op {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Op::Assign => write!(f, "="),
+            Op::Field => write!(f, "."),
+            Op::Add => write!(f, "+"),
+            Op::Sub => write!(f, "-"),
+            Op::Mul => write!(f, "*"),
+            Op::Div => write!(f, "/"),
+            Op::Pos => write!(f, "+"),
+            Op::Neg => write!(f, "-"),
+        }
+    }
+}
 
 pub struct Parser<'de> {
-    lexer: Lexer<'de>,
+    source: &'de str,
+    lexer: Peekable<Lexer<'de>>,
 }
 
 impl<'de> Parser<'de> {
     pub fn new(file_contents: &'de str) -> Self {
         Self {
-            lexer: Lexer::new(file_contents),
+            source: file_contents,
+            lexer: Lexer::new(file_contents).peekable(),
         }
     }
 }
 
-// #[derive(Debug)]
-// pub struct Program {
-//     statements: Vec<Statement>,
-// }
+impl<'de> Iterator for Parser<'de> {
+    type Item = Result<Statement<'de>, ParserError>;
 
-// impl Program {
-//     pub fn new() -> Self {
-//         Self { statements: vec![] }
-//     }
+    fn next(&mut self) -> Option<Self::Item> {
+        self.lexer.peek()?;
+        Some(self.parse_statement())
+    }
+}
 
-//     pub fn add_statement(&mut self, statement: Statement) {
-//         self.statements.push(statement);
-//     }
-// }
+impl<'de> Parser<'de> {
+    fn expect_token(&mut self, expected: TokenKind) -> Result<Token<'de>, ParserError> {
+        match self.lexer.next() {
+            Some(Ok(t @ Token { kind, orig, offset })) => {
+                if kind == expected {
+                    return Ok(t);
+                }
 
-// impl IntoIterator for Program {
-//     type Item = Statement;
+                Err(ParserError::UnexpectedToken {
+                    src: self.source.to_string(),
+                    span: (offset..offset + orig.len()).into(),
+                })
+            }
+            Some(Err(e)) => Err(e.into()),
+            None => Err(ParserError::UnexpectedEOF {
+                src: self.source.to_string(),
+            }),
+        }
+    }
 
-//     type IntoIter = std::vec::IntoIter<Statement>;
+    fn parse_statement(&mut self) -> Result<Statement<'de>, ParserError> {
+        match self.lexer.peek() {
+            Some(Ok(Token {
+                kind: TokenKind::Semicolon,
+                ..
+            })) => {
+                self.lexer.next();
+                Ok(Statement::Nop)
+            }
+            Some(Ok(Token {
+                kind: TokenKind::Let,
+                ..
+            })) => {
+                self.lexer.next();
+                let ident = self.parse_identifier()?;
+                self.expect_token(TokenKind::Eq)?;
+                let expr = self.parse_expr()?;
+                self.expect_token(TokenKind::Semicolon)?;
+                Ok(Statement::LetDeclaration(ident, expr))
+            }
+            Some(Ok(Token {
+                kind: TokenKind::Identifier(_),
+                ..
+            })) => {
+                let ident = self.parse_identifier()?;
+                self.expect_token(TokenKind::Eq)?;
+                let expr = self.parse_expr()?;
+                self.expect_token(TokenKind::Semicolon)?;
+                Ok(Statement::Assignment(ident, expr))
+            }
+            Some(Ok(Token {
+                kind: TokenKind::Return,
+                ..
+            })) => {
+                self.lexer.next();
+                let expr = self.parse_expr()?;
+                self.expect_token(TokenKind::Semicolon)?;
+                Ok(Statement::Return(expr))
+            }
+            Some(Err(e)) => Err(e.into()),
+            None => Err(ParserError::UnexpectedEOF {
+                src: self.source.to_string(),
+            }),
+            Some(Ok(_)) => self.parse_expr().map(Statement::Expr),
+        }
+    }
 
-//     fn into_iter(self) -> Self::IntoIter {
-//         self.statements.into_iter()
-//     }
-// }
+    fn parse_identifier(&mut self) -> Result<Identifier<'de>, ParserError> {
+        match self.lexer.next() {
+            Some(Ok(Token {
+                kind: TokenKind::Identifier(s),
+                ..
+            })) => Ok(Identifier { name: s }),
+            Some(Ok(Token { orig, offset, .. })) => Err(ParserError::ExpectedIdentifier {
+                src: self.source.to_string(),
+                span: (offset..offset + orig.len()).into(),
+            }),
+            Some(Err(e)) => Err(e.into()),
+            None => Err(ParserError::UnexpectedEOF {
+                src: self.source.to_string(),
+            }),
+        }
+    }
 
-// #[derive(Debug)]
-// pub enum Statement {
-//     Return {
-//         expression: Expression,
-//     },
-//     VariableDeclaration {
-//         identifier: String,
-//         expression: Expression,
-//     },
-// }
+    fn parse_expr(&mut self) -> Result<Expr<'de>, ParserError> {
+        if self.lexer.peek().is_none() {
+            return Err(ParserError::UnexpectedEOF {
+                src: self.source.to_string(),
+            });
+        }
 
-// #[derive(Debug)]
-// pub enum Expression {
-//     Binary(BinaryExpression),
-//     Identifier(String),
-//     Literal(Literal),
-// }
+        self.parse_expr_within(0)
+    }
 
-// #[derive(Debug)]
-// pub enum BinaryExpression {
-//     Additive(Box<Expression>, BinaryOperator, Box<Expression>),
-//     Multiplicative(Box<Expression>, BinaryOperator, Box<Expression>),
-// }
+    fn parse_expr_within(&mut self, min_bp: u8) -> Result<Expr<'de>, ParserError> {
+        let mut lhs = match self.lexer.next() {
+            // literals
+            Some(Ok(Token {
+                kind: TokenKind::Number(n),
+                ..
+            })) => Expr::Atom(Atom::Number(n)),
+            Some(Ok(Token {
+                kind: TokenKind::String(s),
+                ..
+            })) => Expr::Atom(Atom::String(s)),
+            Some(Ok(Token {
+                kind: TokenKind::Identifier(s),
+                ..
+            })) => Expr::Atom(Atom::Identifier(s)),
+            // parenthesized expression
+            Some(Ok(Token {
+                kind: TokenKind::LeftParen,
+                ..
+            })) => {
+                let lhs = self.parse_expr_within(0)?;
+                self.expect_token(TokenKind::RightParen)?;
+                lhs
+            }
+            // prefix operators
+            Some(Ok(Token {
+                kind: TokenKind::Plus,
+                ..
+            })) => {
+                let op = Op::Pos;
+                let ((), r_bp) =
+                    Self::prefix_binding_power(&op).expect("negate is a valid prefix op");
+                let rhs = self.parse_expr_within(r_bp)?;
+                Expr::Cons(op, vec![rhs])
+            }
+            Some(Ok(Token {
+                kind: TokenKind::Minus,
+                ..
+            })) => {
+                let op = Op::Neg;
+                let ((), r_bp) =
+                    Self::prefix_binding_power(&op).expect("negate is a valid prefix op");
+                let rhs = self.parse_expr_within(r_bp)?;
+                Expr::Cons(op, vec![rhs])
+            }
+            // errors
+            Some(Err(e)) => return Err(e.into()),
+            None => {
+                return Err(ParserError::UnexpectedEOF {
+                    src: self.source.to_string(),
+                });
+            }
+            Some(Ok(Token { orig, offset, .. })) => {
+                return Err(ParserError::UnexpectedToken {
+                    src: self.source.to_string(),
+                    span: (offset..offset + orig.len()).into(),
+                });
+            }
+        };
 
-// #[derive(Debug)]
-// pub enum BinaryOperator {
-//     Add,
-//     Sub,
-//     Mul,
-//     Div,
-// }
+        loop {
+            let op = match self.lexer.peek() {
+                Some(Ok(Token {
+                    kind: TokenKind::Eq,
+                    ..
+                })) => Op::Assign,
+                Some(Ok(Token {
+                    kind: TokenKind::Plus,
+                    ..
+                })) => Op::Add,
+                Some(Ok(Token {
+                    kind: TokenKind::Minus,
+                    ..
+                })) => Op::Sub,
+                Some(Ok(Token {
+                    kind: TokenKind::Star,
+                    ..
+                })) => Op::Mul,
+                Some(Ok(Token {
+                    kind: TokenKind::Slash,
+                    ..
+                })) => Op::Div,
+                Some(Ok(Token {
+                    kind: TokenKind::Dot,
+                    ..
+                })) => Op::Field,
+                Some(Err(e)) => return Err(e.into()),
+                None => break,
+                Some(Ok(Token { .. })) => break,
+            };
 
-// impl BinaryOperator {
-//     pub fn get_precedence(&self) -> u8 {
-//         match self {
-//             BinaryOperator::Add | BinaryOperator::Sub => 1,
-//             BinaryOperator::Mul | BinaryOperator::Div => 2,
-//         }
-//     }
-// }
+            if let Some((l_bp, ())) = Self::postfix_binding_power(&op) {
+                if l_bp < min_bp {
+                    break;
+                }
+                self.lexer.next();
 
-// #[derive(Debug)]
-// pub enum Literal {
-//     IntLiteral { value: i64 },
-// }
+                lhs = Expr::Cons(op, vec![lhs]);
+                continue;
+            }
 
-// const END_STATEMENT: Statement = Statement::Return {
-//     expression: Expression::Literal(Literal::IntLiteral { value: 0 }),
-// };
+            if let Some((l_bp, r_bp)) = Self::infix_binding_power(&op) {
+                if l_bp < min_bp {
+                    break;
+                }
+                self.lexer.next();
 
-// pub fn parse(mut tokens: VecDeque<Token>) -> Result<Program, error::ParsingError> {
-//     let mut program = Program::new();
-//     let mut declared_vars: HashSet<String> = HashSet::new();
+                let rhs = self.parse_expr_within(r_bp)?;
+                lhs = Expr::Cons(op, vec![lhs, rhs]);
+                continue;
+            }
 
-//     while let Some(token) = tokens.front() {
-//         let (statement, remaining_tokens) = match token {
-//             Token::Eof => (END_STATEMENT, VecDeque::new()),
-//             _ => parse_statement(tokens, &mut declared_vars)?,
-//         };
-//         program.add_statement(statement);
-//         tokens = remaining_tokens;
-//     }
+            break;
+        }
 
-//     Ok(program)
-// }
+        Ok(lhs)
+    }
 
-// fn parse_statement(
-//     mut tokens: VecDeque<Token>,
-//     declared_vars: &mut HashSet<String>,
-// ) -> Result<(Statement, VecDeque<Token>), error::ParsingError> {
-//     match tokens.front() {
-//         Some(Token::Let) => {
-//             tokens.pop_front();
+    fn prefix_binding_power(op: &Op) -> Option<((), u8)> {
+        let res = match op {
+            Op::Pos | Op::Neg => ((), 9),
+            _ => return None,
+        };
+        Some(res)
+    }
 
-//             let (identifier, remaining_tokens) = parse_identifier(tokens)?;
-//             tokens = remaining_tokens;
-//             declared_vars.insert(identifier.clone());
+    fn infix_binding_power(op: &Op) -> Option<(u8, u8)> {
+        let res = match op {
+            Op::Assign => (2, 1),
+            Op::Add | Op::Sub => (5, 6),
+            Op::Mul | Op::Div => (7, 8),
+            Op::Field => (14, 13),
+            _ => return None,
+        };
+        Some(res)
+    }
 
-//             tokens = try_consume(tokens, Token::Equals)?;
-
-//             let (expression, remaining_tokens) = parse_expression(tokens, declared_vars, 0)?;
-//             tokens = remaining_tokens;
-
-//             tokens = try_consume(tokens, Token::Semi)?;
-
-//             Ok((
-//                 Statement::VariableDeclaration {
-//                     identifier,
-//                     expression,
-//                 },
-//                 tokens,
-//             ))
-//         }
-//         Some(Token::Return) => {
-//             tokens.pop_front();
-
-//             let (expression, remaining_tokens) = parse_expression(tokens, declared_vars, 0)?;
-//             tokens = remaining_tokens;
-
-//             tokens = try_consume(tokens, Token::Semi)?;
-
-//             Ok((Statement::Return { expression }, tokens))
-//         }
-//         Some(_) => Err(error::ParsingError::UnexpectedToken(
-//             tokens.pop_front().unwrap(),
-//         )),
-//         None => Err(error::ParsingError::Statement),
-//     }
-// }
-
-// fn parse_identifier(
-//     mut tokens: VecDeque<Token>,
-// ) -> Result<(String, VecDeque<Token>), error::ParsingError> {
-//     if let Some(Token::Identifier(identifier)) = tokens.pop_front() {
-//         Ok((identifier, tokens))
-//     } else {
-//         Err(error::ParsingError::ExpectedIdentifier)
-//     }
-// }
-
-// fn parse_expression(
-//     mut tokens: VecDeque<Token>,
-//     declared_vars: &HashSet<String>,
-//     precedence: u8,
-// ) -> Result<(Expression, VecDeque<Token>), error::ParsingError> {
-//     let (mut left_expression, remaining_tokens) = parse_primary_expression(tokens, declared_vars)?;
-//     tokens = remaining_tokens;
-
-//     while let Some(token) = tokens.front() {
-//         match token {
-//             Token::Plus | Token::Minus | Token::Star | Token::Slash => {
-//                 let operator_token = tokens.pop_front().unwrap();
-//                 let operator = match operator_token {
-//                     Token::Plus => BinaryOperator::Add,
-//                     Token::Minus => BinaryOperator::Sub,
-//                     Token::Star => BinaryOperator::Mul,
-//                     Token::Slash => BinaryOperator::Div,
-//                     _ => unreachable!(),
-//                 };
-
-//                 let operator_precedence = operator.get_precedence();
-//                 if operator_precedence < precedence {
-//                     break;
-//                 }
-
-//                 let (right_expression, remaining_tokens) =
-//                     parse_primary_expression(tokens, declared_vars)?;
-//                 tokens = remaining_tokens;
-
-//                 left_expression = match operator {
-//                     BinaryOperator::Add | BinaryOperator::Sub => {
-//                         Expression::Binary(BinaryExpression::Additive(
-//                             Box::new(left_expression),
-//                             operator,
-//                             Box::new(right_expression),
-//                         ))
-//                     }
-//                     BinaryOperator::Mul | BinaryOperator::Div => {
-//                         Expression::Binary(BinaryExpression::Multiplicative(
-//                             Box::new(left_expression),
-//                             operator,
-//                             Box::new(right_expression),
-//                         ))
-//                     }
-//                 };
-//             }
-//             _ => break,
-//         }
-//     }
-
-//     Ok((left_expression, tokens))
-// }
-
-// fn parse_primary_expression(
-//     mut tokens: VecDeque<Token>,
-//     declared_vars: &HashSet<String>,
-// ) -> Result<(Expression, VecDeque<Token>), error::ParsingError> {
-//     match tokens.pop_front() {
-//         Some(Token::LeftParen) => {
-//             let (inner_expression, remaining_tokens) = parse_expression(tokens, declared_vars, 0)?;
-//             tokens = remaining_tokens;
-
-//             tokens = try_consume(tokens, Token::RightParen)?;
-
-//             Ok((inner_expression, tokens))
-//         }
-//         Some(Token::Identifier(identifier)) => match declared_vars.contains(&identifier) {
-//             true => Ok((Expression::Identifier(identifier), tokens)),
-//             false => Err(error::ParsingError::UndeclaredIndentifier(identifier)),
-//         },
-//         Some(Token::Literal(value)) => {
-//             let literal = parse_literal(&value)?;
-//             Ok((Expression::Literal(literal), tokens))
-//         }
-//         _ => Err(error::ParsingError::ExpectedExpression),
-//     }
-// }
-
-// fn parse_literal(literal: &str) -> Result<Literal, error::ParsingError> {
-//     let int_re = regex::Regex::new(r"\d+").unwrap();
-
-//     if int_re.is_match(literal) {
-//         return Ok(Literal::IntLiteral {
-//             value: literal.parse::<i64>().unwrap(),
-//         });
-//     }
-
-//     Err(error::ParsingError::Literal(String::from(literal)))
-// }
-
-// fn try_consume(
-//     mut tokens: VecDeque<Token>,
-//     expected: Token,
-// ) -> Result<VecDeque<Token>, error::ParsingError> {
-//     match tokens.pop_front() {
-//         Some(token) if token == expected => Ok(tokens),
-//         _ => Err(error::ParsingError::ExpectedToken(format!(
-//             "{:?}",
-//             expected
-//         ))),
-//     }
-// }
+    fn postfix_binding_power(op: &Op) -> Option<(u8, ())> {
+        let res = match op {
+            _ => return None,
+        };
+        Some(res)
+    }
+}

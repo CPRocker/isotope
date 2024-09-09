@@ -1,5 +1,5 @@
 use clap::{Parser, ValueEnum};
-use miette::{Diagnostic, IntoDiagnostic, Result};
+use miette::{Diagnostic, Result};
 use thiserror::Error;
 
 use std::fs;
@@ -69,7 +69,7 @@ fn lex(file_contents: &str) -> Result<()> {
     let lexer = isotope::lexer::Lexer::new(file_contents);
 
     for token in lexer {
-        let token = token.into_diagnostic()?;
+        let token = token?;
         println!("{:?}", token);
     }
 
@@ -79,17 +79,22 @@ fn lex(file_contents: &str) -> Result<()> {
 fn parse(file_contents: &str) -> Result<()> {
     let parser = isotope::parser::Parser::new(file_contents);
 
-    todo!()
+    for statement in parser {
+        let statement = statement?;
+        println!("{}", statement);
+    }
+
+    Ok(())
 }
 
 fn generate(file_contents: &str) -> Result<()> {
-    let generator = isotope::generator::Generator::new(file_contents);
+    let _generator = isotope::generator::Generator::new(file_contents);
 
     todo!()
 }
 
 fn compile(file_contents: &str) -> Result<()> {
-    let compiler = isotope::compiler::Compiler::new(file_contents);
+    let _compiler = isotope::compiler::Compiler::new(file_contents);
 
     todo!()
 }

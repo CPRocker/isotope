@@ -1,9 +1,9 @@
 use std::fmt::Display;
 
-use miette::{Diagnostic, SourceSpan};
+use miette::{Diagnostic, Result, SourceSpan};
 use thiserror::Error;
 
-#[derive(Error, Diagnostic, Debug)]
+#[derive(Error, Diagnostic, Debug, Clone)]
 pub enum LexerError {
     UnexpectedEOF {
         #[source_code]
@@ -53,10 +53,10 @@ pub struct Token<'de> {
     pub offset: usize,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TokenKind<'de> {
     // single character
-    Equals,
+    Eq,
     LeftParen,
     RightParen,
     Minus,
@@ -77,7 +77,7 @@ pub enum TokenKind<'de> {
 impl Display for TokenKind<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TokenKind::Equals => write!(f, "="),
+            TokenKind::Eq => write!(f, "="),
             TokenKind::LeftParen => write!(f, "("),
             TokenKind::RightParen => write!(f, ")"),
             TokenKind::Minus => write!(f, "-"),
@@ -110,6 +110,21 @@ impl<'de> Lexer<'de> {
         }
     }
 
+    pub fn offset(&self) -> usize {
+        self.byte
+    }
+
+    fn trim_and_check(&mut self) -> bool {
+        self.trim();
+        self.peek().is_none()
+    }
+
+    fn trim(&mut self) {
+        let before_trim = self.rest.len();
+        self.rest = self.rest.trim_start();
+        self.byte += before_trim - self.rest.len();
+    }
+
     fn peek(&self) -> Option<char> {
         self.rest.chars().next()
     }
@@ -127,11 +142,7 @@ impl<'de> Iterator for Lexer<'de> {
     type Item = Result<Token<'de>, LexerError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let before_trim = self.rest.len();
-        self.rest = self.rest.trim_start();
-        self.byte += before_trim - self.rest.len();
-
-        if self.rest.is_empty() {
+        if self.trim_and_check() {
             return None;
         }
 
@@ -157,7 +168,7 @@ impl<'de> Iterator for Lexer<'de> {
             '-' => return single_char_token!(Minus),
             '+' => return single_char_token!(Plus),
             '*' => return single_char_token!(Star),
-            '=' => return single_char_token!(Equals),
+            '=' => return single_char_token!(Eq),
             '.' => return single_char_token!(Dot),
             ';' => return single_char_token!(Semicolon),
             '/' => Started::Slash,
@@ -167,7 +178,7 @@ impl<'de> Iterator for Lexer<'de> {
             _ => {
                 return Some(Err(LexerError::UnexpectedToken {
                     src: self.whole.to_string(),
-                    span: offset.into(),
+                    span: (offset..self.byte).into(),
                 }))
             }
         };
@@ -205,7 +216,7 @@ impl<'de> Iterator for Lexer<'de> {
                 let mut num = c_onwards
                     .split_once(|d| !matches!(d, '0'..='9' | '.'))
                     .map_or(c_onwards, |(num, _)| num);
-                let parts: Vec<&str> = dbg!(num.split('.').collect());
+                let parts: Vec<&str> = num.split('.').collect();
 
                 let n = match parts.len() {
                     1 => {
