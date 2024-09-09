@@ -302,7 +302,7 @@ impl<'de> Iterator for Lexer<'de> {
 }
 
 #[cfg(test)]
-mod tests {
+mod lex {
     use super::TokenKind::*;
     use super::*;
 
@@ -417,5 +417,5 @@ mod tests {
         assert!(lexer.next().is_none());
     }
 
-    // TODO: test errors
+    // TODO: test error cases
 }

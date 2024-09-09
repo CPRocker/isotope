@@ -46,7 +46,7 @@ impl std::fmt::Display for ParserError {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Statement<'de> {
     Nop,
     LetDeclaration(Identifier<'de>, Expr<'de>),
@@ -67,7 +67,7 @@ impl<'de> Display for Statement<'de> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Identifier<'de> {
     name: &'de str,
 }
@@ -78,7 +78,7 @@ impl<'de> Display for Identifier<'de> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expr<'de> {
     Atom(Atom<'de>),
     Cons(Op, Vec<Expr<'de>>),
@@ -395,4 +395,100 @@ impl<'de> Parser<'de> {
         };
         Some(res)
     }
+}
+
+#[cfg(test)]
+mod parse {
+    use super::*;
+
+    #[test]
+    fn eof() {
+        let mut parser = Parser::new("");
+
+        assert!(parser.next().is_none());
+    }
+
+    #[test]
+    fn nop() {
+        let mut parser = Parser::new(";;;");
+
+        if let Some(Ok(expr)) = parser.next() {
+            assert_eq!(expr, Statement::Nop);
+        } else {
+            panic!("Invalid expression");
+        };
+    }
+
+    #[test]
+    fn let_statement() {
+        let mut parser = Parser::new("let x = 1;");
+
+        if let Some(Ok(expr)) = parser.next() {
+            assert_eq!(format!("{}", expr), "let x = 1;");
+        } else {
+            panic!("Invalid expression");
+        };
+    }
+
+    #[test]
+    fn assignment_statement() {
+        let mut parser = Parser::new("x = 1;");
+
+        if let Some(Ok(expr)) = parser.next() {
+            assert_eq!(format!("{}", expr), "x = 1;");
+        } else {
+            panic!("Invalid expression");
+        };
+    }
+
+    #[test]
+    fn return_statement() {
+        let mut parser = Parser::new("return 1;");
+
+        if let Some(Ok(expr)) = parser.next() {
+            assert_eq!(format!("{}", expr), "return 1;");
+        } else {
+            panic!("Invalid expression");
+        };
+    }
+
+    mod expr {
+        use super::*;
+
+        #[test]
+        fn prefix_op_precedence() {
+            let mut parser = Parser::new("-1 + 2");
+
+            if let Ok(expr) = parser.parse_expr() {
+                assert_eq!(format!("{}", expr), "(+ (- 1) 2)");
+            } else {
+                panic!("Invalid expression");
+            };
+        }
+
+        #[test]
+        fn infix_op_precedence() {
+            let mut parser = Parser::new("0 + 1 * 2 - 3 / 4");
+
+            if let Ok(expr) = parser.parse_expr() {
+                assert_eq!(format!("{}", expr), "(- (+ 0 (* 1 2)) (/ 3 4))");
+            } else {
+                panic!("Invalid expression");
+            };
+        }
+
+        // TODO
+        // #[test]
+        // fn postfix_op_precedence() {
+        //     let mut parser = Parser::new("1 + 2 - 3");
+
+        //     if let Ok(expr) = parser.parse_expr() {
+        //         assert_eq!(format!("{}", expr), "(+ 1 (- 2 3))");
+        //     } else {
+        //         panic!("Invalid expression");
+        //     };
+        // }
+    }
+
+    // TODO: test error cases
 }
