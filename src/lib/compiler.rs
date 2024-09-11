@@ -10,4 +10,8 @@ impl<'de> Compiler<'de> {
             generator: Generator::new(file_contents),
         }
     }
+
+    pub fn compile(&mut self) -> String {
+        self.generator.generate()
+    }
 }

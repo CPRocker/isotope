@@ -5,8 +5,9 @@ use thiserror::Error;
 
 use crate::lexer::{Lexer, LexerError, Token, TokenKind};
 
-#[derive(Error, Diagnostic, Debug, Clone)]
+#[derive(Error, Diagnostic, Debug, Clone, PartialEq)]
 pub enum ParserError {
+    #[error(transparent)]
     LexerError(#[from] LexerError),
     UnexpectedEOF {
         #[source_code]

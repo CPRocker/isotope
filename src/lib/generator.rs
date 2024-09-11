@@ -10,6 +10,11 @@ impl<'de> Generator<'de> {
             parser: Parser::new(file_contents),
         }
     }
+
+    pub fn generate(&mut self) -> String {
+        self.parser.next();
+        todo!()
+    }
 }
 
 // #[derive(Debug)]
