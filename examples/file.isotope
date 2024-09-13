@@ -8,4 +8,5 @@ let x = 10;
 let y = 11;
 let z = 21;
 let a = 32;
-return y + z / x;
+let b = !(1 < 32) >= 5;
+return y + z / x.foo[10];

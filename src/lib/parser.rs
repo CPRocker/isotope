@@ -8,12 +8,29 @@ use crate::lexer::{Lexer, LexerError, Token, TokenKind};
 #[derive(Error, Diagnostic, Debug, Clone, PartialEq)]
 pub enum ParserError {
     #[error(transparent)]
-    LexerError(#[from] LexerError),
+    LexerError(
+        #[from]
+        #[diagnostic_source]
+        LexerError,
+    ),
     UnexpectedEOF {
         #[source_code]
         src: String,
     },
     UnexpectedToken {
+        #[source_code]
+        src: String,
+        #[label = "here"]
+        span: SourceSpan,
+    },
+    ExpectedToken {
+        #[source_code]
+        src: String,
+        #[label = "here"]
+        span: SourceSpan,
+        expected: String,
+    },
+    ExpectedExpression {
         #[source_code]
         src: String,
         #[label = "here"]
@@ -25,24 +42,43 @@ pub enum ParserError {
         #[label = "here"]
         span: SourceSpan,
     },
+    InvalidPostfixOperator {
+        #[source_code]
+        src: String,
+        #[label = "here"]
+        span: SourceSpan,
+    },
 }
 
 impl From<&LexerError> for ParserError {
     fn from(err: &LexerError) -> ParserError {
-        ParserError::LexerError(err.clone())
+        ParserError::LexerError(err.to_owned())
     }
 }
 
 impl std::fmt::Display for ParserError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ParserError::LexerError(_) => write!(f, "Lexer error"),
+            ParserError::LexerError { .. } => write!(f, "Lexer error"),
             ParserError::UnexpectedEOF { .. } => write!(f, "Unexpected EOF"),
             ParserError::UnexpectedToken { src, span } => {
                 let token = &src[span.offset()..span.offset() + span.len()];
                 write!(f, "Unexpected token: `{}`", token)
             }
+            ParserError::ExpectedToken {
+                src,
+                span,
+                expected,
+            } => {
+                let found = &src[span.offset()..span.offset() + span.len()];
+                write!(f, "Expected `{}` but found `{}`", expected, found)
+            }
+            ParserError::ExpectedExpression { .. } => write!(f, "Expected expression"),
             ParserError::ExpectedIdentifier { .. } => write!(f, "Expected identifier"),
+            ParserError::InvalidPostfixOperator { src, span } => {
+                let token = &src[span.offset()..span.offset() + span.len()];
+                write!(f, "Invalid postfix operator: `{}`", token)
+            }
         }
     }
 }
@@ -112,26 +148,46 @@ pub enum Atom<'de> {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Op {
     Assign,
+    At,
     Field,
     Add,
     Sub,
     Mul,
     Div,
+    Pow,
+    Mod,
     Pos,
     Neg,
+    Not,
+    Eq,
+    Neq,
+    Lt,
+    Lte,
+    Gt,
+    Gte,
 }
 
 impl Display for Op {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Op::Assign => write!(f, "="),
+            Op::At => write!(f, "@"),
             Op::Field => write!(f, "."),
             Op::Add => write!(f, "+"),
             Op::Sub => write!(f, "-"),
             Op::Mul => write!(f, "*"),
             Op::Div => write!(f, "/"),
+            Op::Mod => write!(f, "%"),
+            Op::Pow => write!(f, "^"),
             Op::Pos => write!(f, "+"),
             Op::Neg => write!(f, "-"),
+            Op::Not => write!(f, "!"),
+            Op::Eq => write!(f, "=="),
+            Op::Neq => write!(f, "!="),
+            Op::Lt => write!(f, "<"),
+            Op::Lte => write!(f, "<="),
+            Op::Gt => write!(f, ">"),
+            Op::Gte => write!(f, ">="),
         }
     }
 }
@@ -167,9 +223,10 @@ impl<'de> Parser<'de> {
                     return Ok(t);
                 }
 
-                Err(ParserError::UnexpectedToken {
+                Err(ParserError::ExpectedToken {
                     src: self.source.to_string(),
                     span: (offset..offset + orig.len()).into(),
+                    expected: format!("{}", expected),
                 })
             }
             Some(Err(e)) => Err(e.into()),
@@ -250,7 +307,7 @@ impl<'de> Parser<'de> {
             });
         }
 
-        self.parse_expr_within(0)
+        self.parse_expr_within(0) // TODO: wrap with ExpectedExpression
     }
 
     fn parse_expr_within(&mut self, min_bp: u8) -> Result<Expr<'de>, ParserError> {
@@ -279,12 +336,21 @@ impl<'de> Parser<'de> {
             }
             // prefix operators
             Some(Ok(Token {
+                kind: TokenKind::Bang,
+                ..
+            })) => {
+                let op = Op::Not;
+                let ((), r_bp) = Self::prefix_binding_power(&op).expect("not is a valid prefix op");
+                let rhs = self.parse_expr_within(r_bp)?;
+                Expr::Cons(op, vec![rhs])
+            }
+            Some(Ok(Token {
                 kind: TokenKind::Plus,
                 ..
             })) => {
                 let op = Op::Pos;
                 let ((), r_bp) =
-                    Self::prefix_binding_power(&op).expect("negate is a valid prefix op");
+                    Self::prefix_binding_power(&op).expect("postive is a valid prefix op");
                 let rhs = self.parse_expr_within(r_bp)?;
                 Expr::Cons(op, vec![rhs])
             }
@@ -336,9 +402,45 @@ impl<'de> Parser<'de> {
                     ..
                 })) => Op::Div,
                 Some(Ok(Token {
+                    kind: TokenKind::Percent,
+                    ..
+                })) => Op::Mod,
+                Some(Ok(Token {
+                    kind: TokenKind::Caret,
+                    ..
+                })) => Op::Pow,
+                Some(Ok(Token {
+                    kind: TokenKind::BangEq,
+                    ..
+                })) => Op::Neq,
+                Some(Ok(Token {
+                    kind: TokenKind::EqEq,
+                    ..
+                })) => Op::Eq,
+                Some(Ok(Token {
+                    kind: TokenKind::Less,
+                    ..
+                })) => Op::Lt,
+                Some(Ok(Token {
+                    kind: TokenKind::Greater,
+                    ..
+                })) => Op::Gt,
+                Some(Ok(Token {
+                    kind: TokenKind::LessEq,
+                    ..
+                })) => Op::Lte,
+                Some(Ok(Token {
+                    kind: TokenKind::GreaterEq,
+                    ..
+                })) => Op::Gte,
+                Some(Ok(Token {
                     kind: TokenKind::Dot,
                     ..
                 })) => Op::Field,
+                Some(Ok(Token {
+                    kind: TokenKind::LeftBracket,
+                    ..
+                })) => Op::At,
                 Some(Err(e)) => return Err(e.into()),
                 None => break,
                 Some(Ok(Token { .. })) => break,
@@ -348,9 +450,27 @@ impl<'de> Parser<'de> {
                 if l_bp < min_bp {
                     break;
                 }
-                self.lexer.next();
+                let op_token = self
+                    .lexer
+                    .next()
+                    .expect("Already checked peek")
+                    .expect("Already checked peek");
 
-                lhs = Expr::Cons(op, vec![lhs]);
+                lhs = match op {
+                    Op::Field => Expr::Cons(op, vec![lhs]),
+                    Op::At => {
+                        let rhs = self.parse_expr()?;
+                        self.expect_token(TokenKind::RightBracket)?;
+                        Expr::Cons(op, vec![lhs, rhs])
+                    }
+                    _ => {
+                        // NOTE: should not be reachable due to `postfix_binding_power` returning None
+                        return Err(ParserError::InvalidPostfixOperator {
+                            src: self.source.to_string(),
+                            span: op_token.span().into(),
+                        });
+                    }
+                };
                 continue;
             }
 
@@ -373,7 +493,8 @@ impl<'de> Parser<'de> {
 
     fn prefix_binding_power(op: &Op) -> Option<((), u8)> {
         let res = match op {
-            Op::Pos | Op::Neg => ((), 9),
+            Op::Not => ((), 9),
+            Op::Pos | Op::Neg => ((), 11),
             _ => return None,
         };
         Some(res)
@@ -382,9 +503,10 @@ impl<'de> Parser<'de> {
     fn infix_binding_power(op: &Op) -> Option<(u8, u8)> {
         let res = match op {
             Op::Assign => (2, 1),
+            Op::Lt | Op::Gt | Op::Lte | Op::Gte | Op::Eq | Op::Neq => (3, 4),
             Op::Add | Op::Sub => (5, 6),
             Op::Mul | Op::Div => (7, 8),
-            Op::Field => (14, 13),
+            Op::Field => (16, 15),
             _ => return None,
         };
         Some(res)
@@ -392,6 +514,7 @@ impl<'de> Parser<'de> {
 
     fn postfix_binding_power(op: &Op) -> Option<(u8, ())> {
         let res = match op {
+            Op::At => (13, ()),
             _ => return None,
         };
         Some(res)
