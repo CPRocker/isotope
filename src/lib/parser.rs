@@ -167,6 +167,18 @@ impl<'de> Display for Expr<'de> {
             Expr::Atom(Atom::Identifier(s)) => write!(f, "{}", s),
             Expr::Atom(Atom::Number(n)) => write!(f, "{}", n),
             Expr::Atom(Atom::String(s)) => write!(f, "\"{}\"", s),
+            Expr::Cons(op, args) if op == &Op::Call => {
+                for (i, arg) in args.iter().enumerate() {
+                    if i == 0 {
+                        write!(f, "({}(", arg)?;
+                    } else if i == 1 {
+                        write!(f, "{}", arg)?;
+                    } else {
+                        write!(f, ", {}", arg)?;
+                    }
+                }
+                write!(f, "))")
+            }
             Expr::Cons(op, args) => {
                 write!(f, "({}", op)?;
                 for arg in args {
@@ -738,11 +750,44 @@ mod parse {
         use super::*;
 
         #[test]
+        fn function_call() {
+            let mut parser = Parser::new("foo(1, 2, 3)");
+
+            if let Ok(expr) = parser.parse_expr() {
+                assert_eq!(format!("{}", expr), "(foo(1, 2, 3))");
+            } else {
+                panic!("Invalid expression");
+            };
+        }
+
+        #[test]
+        fn indexing() {
+            let mut parser = Parser::new("foo[0]");
+
+            if let Ok(expr) = parser.parse_expr() {
+                assert_eq!(format!("{}", expr), "([] foo 0)");
+            } else {
+                panic!("Invalid expression");
+            };
+        }
+
+        #[test]
         fn prefix_op_precedence() {
             let mut parser = Parser::new("-1 + 2");
 
             if let Ok(expr) = parser.parse_expr() {
                 assert_eq!(format!("{}", expr), "(+ (- 1) 2)");
+            } else {
+                panic!("Invalid expression");
+            };
+        }
+
+        #[test]
+        fn additive_infix_op_precedence() {
+            let mut parser = Parser::new("1 + 2 - 3");
+
+            if let Ok(expr) = parser.parse_expr() {
+                assert_eq!(format!("{}", expr), "(- (+ 1 2) 3)");
             } else {
                 panic!("Invalid expression");
             };
@@ -759,17 +804,27 @@ mod parse {
             };
         }
 
-        // TODO
-        // #[test]
-        // fn postfix_op_precedence() {
-        //     let mut parser = Parser::new("1 + 2 - 3");
+        #[test]
+        fn infix_postfix_op_precedence() {
+            let mut parser = Parser::new("1 + foo[0] - 3");
 
-        //     if let Ok(expr) = parser.parse_expr() {
-        //         assert_eq!(format!("{}", expr), "(+ 1 (- 2 3))");
-        //     } else {
-        //         panic!("Invalid expression");
-        //     };
-        // }
+            if let Ok(expr) = parser.parse_expr() {
+                assert_eq!(format!("{}", expr), "(- (+ 1 ([] foo 0)) 3)");
+            } else {
+                panic!("Invalid expression");
+            };
+        }
+
+        #[test]
+        fn postfix_op_precedence() {
+            let mut parser = Parser::new("foo(1, 2, 3)[0]");
+
+            if let Ok(expr) = parser.parse_expr() {
+                assert_eq!(format!("{}", expr), "([] (foo(1, 2, 3)) 0)");
+            } else {
+                panic!("Invalid expression");
+            };
+        }
     }
 
     // TODO: test error cases
