@@ -1,6 +1,6 @@
 use std::{fmt::Display, iter::Peekable};
 
-use miette::{Context, Diagnostic, Result, SourceSpan};
+use miette::{Diagnostic, Result, SourceSpan};
 use thiserror::Error;
 
 use crate::lexer::{Lexer, LexerError, Token, TokenKind};
@@ -187,47 +187,49 @@ pub enum Atom<'de> {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Op {
-    Assign,
-    At,
-    Field,
     Add,
-    Sub,
-    Mul,
+    Assign,
+    Call,
     Div,
-    Pow,
-    Mod,
-    Pos,
-    Neg,
-    Not,
     Eq,
-    Neq,
-    Lt,
-    Lte,
+    Field,
     Gt,
     Gte,
+    Index,
+    Lt,
+    Lte,
+    Mod,
+    Mul,
+    Neg,
+    Neq,
+    Not,
+    Pos,
+    Pow,
+    Sub,
 }
 
 impl Display for Op {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Op::Assign => write!(f, "="),
-            Op::At => write!(f, "[]"),
-            Op::Field => write!(f, "."),
             Op::Add => write!(f, "+"),
-            Op::Sub => write!(f, "-"),
-            Op::Mul => write!(f, "*"),
+            Op::Assign => write!(f, "="),
+            Op::Call => write!(f, "()"),
             Op::Div => write!(f, "/"),
-            Op::Mod => write!(f, "%"),
-            Op::Pow => write!(f, "^"),
-            Op::Pos => write!(f, "+"),
-            Op::Neg => write!(f, "-"),
-            Op::Not => write!(f, "!"),
             Op::Eq => write!(f, "=="),
-            Op::Neq => write!(f, "!="),
-            Op::Lt => write!(f, "<"),
-            Op::Lte => write!(f, "<="),
+            Op::Field => write!(f, "."),
             Op::Gt => write!(f, ">"),
             Op::Gte => write!(f, ">="),
+            Op::Index => write!(f, "[]"),
+            Op::Lt => write!(f, "<"),
+            Op::Lte => write!(f, "<="),
+            Op::Mod => write!(f, "%"),
+            Op::Mul => write!(f, "*"),
+            Op::Neg => write!(f, "-"),
+            Op::Neq => write!(f, "!="),
+            Op::Not => write!(f, "!"),
+            Op::Pos => write!(f, "+"),
+            Op::Pow => write!(f, "^"),
+            Op::Sub => write!(f, "-"),
         }
     }
 }
@@ -456,6 +458,33 @@ impl<'de> Parser<'de> {
         }
     }
 
+    /// Parses a list of expressions separated by the given separator token until the
+    /// given end token.
+    ///
+    /// Note: this will not consume the end token
+    fn parse_expr_list(
+        &mut self,
+        sep: TokenKind,
+        end: TokenKind,
+    ) -> Result<Vec<Expr<'de>>, ParserError> {
+        let mut params: Vec<Expr<'de>> = vec![];
+
+        loop {
+            match self.lexer.peek() {
+                Some(Ok(Token { kind, .. })) if kind == &end => break,
+                Some(Ok(Token { kind, .. })) if kind == &sep => {
+                    self.lexer.next();
+                }
+                _ => {
+                    let param = self.parse_expr()?;
+                    params.push(param);
+                }
+            }
+        }
+
+        Ok(params)
+    }
+
     fn parse_expr(&mut self) -> Result<Expr<'de>, ParserError> {
         if self.lexer.peek().is_none() {
             return Err(ParserError::UnexpectedEOF {
@@ -492,6 +521,16 @@ impl<'de> Parser<'de> {
             }
             // prefix operators
             Some(Ok(Token {
+                kind: TokenKind::Minus,
+                ..
+            })) => {
+                let op = Op::Neg;
+                let ((), r_bp) =
+                    Self::prefix_binding_power(&op).expect("negate is a valid prefix op");
+                let rhs = self.parse_expr_within(r_bp)?;
+                Expr::Cons(op, vec![rhs])
+            }
+            Some(Ok(Token {
                 kind: TokenKind::Bang,
                 ..
             })) => {
@@ -510,16 +549,6 @@ impl<'de> Parser<'de> {
                 let rhs = self.parse_expr_within(r_bp)?;
                 Expr::Cons(op, vec![rhs])
             }
-            Some(Ok(Token {
-                kind: TokenKind::Minus,
-                ..
-            })) => {
-                let op = Op::Neg;
-                let ((), r_bp) =
-                    Self::prefix_binding_power(&op).expect("negate is a valid prefix op");
-                let rhs = self.parse_expr_within(r_bp)?;
-                Expr::Cons(op, vec![rhs])
-            }
             // errors
             Some(Err(e)) => return Err(e.into()),
             None => {
@@ -535,68 +564,33 @@ impl<'de> Parser<'de> {
             }
         };
 
+        macro_rules! some_ok_token {
+            ($kind:ident) => {
+                Some(Ok(Token {
+                    kind: TokenKind::$kind,
+                    ..
+                }))
+            };
+        }
+
         loop {
             let op = match self.lexer.peek() {
-                Some(Ok(Token {
-                    kind: TokenKind::Eq,
-                    ..
-                })) => Op::Assign,
-                Some(Ok(Token {
-                    kind: TokenKind::Plus,
-                    ..
-                })) => Op::Add,
-                Some(Ok(Token {
-                    kind: TokenKind::Minus,
-                    ..
-                })) => Op::Sub,
-                Some(Ok(Token {
-                    kind: TokenKind::Star,
-                    ..
-                })) => Op::Mul,
-                Some(Ok(Token {
-                    kind: TokenKind::Slash,
-                    ..
-                })) => Op::Div,
-                Some(Ok(Token {
-                    kind: TokenKind::Percent,
-                    ..
-                })) => Op::Mod,
-                Some(Ok(Token {
-                    kind: TokenKind::Caret,
-                    ..
-                })) => Op::Pow,
-                Some(Ok(Token {
-                    kind: TokenKind::BangEq,
-                    ..
-                })) => Op::Neq,
-                Some(Ok(Token {
-                    kind: TokenKind::EqEq,
-                    ..
-                })) => Op::Eq,
-                Some(Ok(Token {
-                    kind: TokenKind::Less,
-                    ..
-                })) => Op::Lt,
-                Some(Ok(Token {
-                    kind: TokenKind::Greater,
-                    ..
-                })) => Op::Gt,
-                Some(Ok(Token {
-                    kind: TokenKind::LessEq,
-                    ..
-                })) => Op::Lte,
-                Some(Ok(Token {
-                    kind: TokenKind::GreaterEq,
-                    ..
-                })) => Op::Gte,
-                Some(Ok(Token {
-                    kind: TokenKind::Dot,
-                    ..
-                })) => Op::Field,
-                Some(Ok(Token {
-                    kind: TokenKind::LeftBracket,
-                    ..
-                })) => Op::At,
+                some_ok_token!(Plus) => Op::Add,
+                some_ok_token!(Eq) => Op::Assign,
+                some_ok_token!(LeftParen) => Op::Call,
+                some_ok_token!(Slash) => Op::Div,
+                some_ok_token!(EqEq) => Op::Eq,
+                some_ok_token!(Dot) => Op::Field,
+                some_ok_token!(Greater) => Op::Gt,
+                some_ok_token!(GreaterEq) => Op::Gte,
+                some_ok_token!(LeftBracket) => Op::Index,
+                some_ok_token!(Less) => Op::Lt,
+                some_ok_token!(LessEq) => Op::Lte,
+                some_ok_token!(Percent) => Op::Mod,
+                some_ok_token!(Star) => Op::Mul,
+                some_ok_token!(BangEq) => Op::Neq,
+                some_ok_token!(Caret) => Op::Pow,
+                some_ok_token!(Minus) => Op::Sub,
                 Some(Err(e)) => return Err(e.into()),
                 None => break,
                 Some(Ok(Token { .. })) => break,
@@ -613,8 +607,15 @@ impl<'de> Parser<'de> {
                     .expect("Already checked peek");
 
                 lhs = match op {
+                    Op::Call => {
+                        let mut params =
+                            self.parse_expr_list(TokenKind::Comma, TokenKind::RightParen)?;
+                        self.expect_token(TokenKind::RightParen)?;
+                        params.insert(0, lhs);
+                        Expr::Cons(op, params)
+                    }
                     Op::Field => Expr::Cons(op, vec![lhs]),
-                    Op::At => {
+                    Op::Index => {
                         let rhs = self.parse_expr()?;
                         self.expect_token(TokenKind::RightBracket)?;
                         Expr::Cons(op, vec![lhs, rhs])
@@ -662,7 +663,7 @@ impl<'de> Parser<'de> {
             Op::Lt | Op::Gt | Op::Lte | Op::Gte | Op::Eq | Op::Neq => (3, 4),
             Op::Add | Op::Sub => (5, 6),
             Op::Mul | Op::Div => (7, 8),
-            Op::Field => (16, 15),
+            Op::Field => (18, 17),
             _ => return None,
         };
         Some(res)
@@ -670,7 +671,8 @@ impl<'de> Parser<'de> {
 
     fn postfix_binding_power(op: &Op) -> Option<(u8, ())> {
         let res = match op {
-            Op::At => (13, ()),
+            Op::Call => (15, ()),
+            Op::Index => (13, ()),
             _ => return None,
         };
         Some(res)

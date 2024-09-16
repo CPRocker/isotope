@@ -16,4 +16,4 @@ fun foo(bar, baz, cat, dog) {
     ret a;
 }
 
-ret foo(x, y, z, a);
+ret foo(x.bar, y, z + 142 - 12 * 2, a[10]);
