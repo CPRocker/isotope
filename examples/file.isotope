@@ -9,4 +9,11 @@ let y = 11;
 let z = 21;
 let a = 32;
 let b = !(1 < 32) >= 5;
-return y + z / x.foo[10];
+ret y + z / x.foo[10];
+
+fun foo(bar, baz, cat, dog) {
+    let a = 4;
+    ret a;
+}
+
+ret foo(x, y, z, a);

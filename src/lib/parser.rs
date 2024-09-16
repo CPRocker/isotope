@@ -1,6 +1,6 @@
 use std::{fmt::Display, iter::Peekable};
 
-use miette::{Diagnostic, Result, SourceSpan};
+use miette::{Context, Diagnostic, Result, SourceSpan};
 use thiserror::Error;
 
 use crate::lexer::{Lexer, LexerError, Token, TokenKind};
@@ -48,6 +48,19 @@ pub enum ParserError {
         #[label = "here"]
         span: SourceSpan,
     },
+    #[diagnostic(help("Did you forget to add a right parenthesis?"))]
+    UnclosedParamList {
+        #[source_code]
+        src: String,
+        #[label = "here"]
+        span: SourceSpan,
+    },
+    UnclosedBlock {
+        #[source_code]
+        src: String,
+        #[label = "here"]
+        span: SourceSpan,
+    },
 }
 
 impl From<&LexerError> for ParserError {
@@ -79,27 +92,54 @@ impl std::fmt::Display for ParserError {
                 let token = &src[span.offset()..span.offset() + span.len()];
                 write!(f, "Invalid postfix operator: `{}`", token)
             }
+            ParserError::UnclosedParamList { .. } => write!(f, "Unclosed parameter list"),
+            ParserError::UnclosedBlock { .. } => write!(f, "Unclosed block"),
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Statement<'de> {
-    Nop,
-    LetDeclaration(Identifier<'de>, Expr<'de>),
-    Assignment(Identifier<'de>, Expr<'de>),
-    Return(Expr<'de>),
+    Assignment {
+        name: Identifier<'de>,
+        value: Expr<'de>,
+    },
     Expr(Expr<'de>),
+    FunctionDeclaration {
+        name: Identifier<'de>,
+        params: Vec<Identifier<'de>>,
+        body: Vec<Statement<'de>>,
+    },
+    LetDeclaration {
+        name: Identifier<'de>,
+        value: Expr<'de>,
+    },
+    Nop,
+    Return(Expr<'de>),
 }
 
 impl<'de> Display for Statement<'de> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Statement::Nop => write!(f, "nop;"),
-            Statement::LetDeclaration(ident, expr) => write!(f, "let {} = {};", ident, expr),
-            Statement::Assignment(ident, expr) => write!(f, "{} = {};", ident, expr),
-            Statement::Return(expr) => write!(f, "return {};", expr),
+            Statement::Assignment { name, value } => write!(f, "{} = {};", name, value),
             Statement::Expr(expr) => write!(f, "{}", expr),
+            Statement::FunctionDeclaration { name, params, body } => {
+                write!(f, "fun {}(", name)?;
+                for (i, param) in params.iter().enumerate() {
+                    write!(f, "{}", param)?;
+                    if i < params.len() - 1 {
+                        write!(f, ", ")?;
+                    }
+                }
+                write!(f, ") {{ ")?;
+                for statement in body {
+                    write!(f, "{} ", statement)?;
+                }
+                write!(f, "}}")
+            }
+            Statement::LetDeclaration { name, value } => write!(f, "let {} = {};", name, value),
+            Statement::Nop => write!(f, "nop;"),
+            Statement::Return(expr) => write!(f, "ret {};", expr),
         }
     }
 }
@@ -171,7 +211,7 @@ impl Display for Op {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Op::Assign => write!(f, "="),
-            Op::At => write!(f, "@"),
+            Op::At => write!(f, "[]"),
             Op::Field => write!(f, "."),
             Op::Add => write!(f, "+"),
             Op::Sub => write!(f, "-"),
@@ -236,6 +276,37 @@ impl<'de> Parser<'de> {
         }
     }
 
+    fn parse_block(&mut self) -> Result<Vec<Statement<'de>>, ParserError> {
+        let left_curly = self.expect_token(TokenKind::LeftCurly)?;
+        let mut statements = vec![];
+
+        loop {
+            match self.lexer.peek() {
+                Some(Ok(Token {
+                    kind: TokenKind::RightCurly,
+                    ..
+                })) => {
+                    break;
+                }
+                Some(Err(e)) => return Err(e.into()),
+                None => {
+                    return Err(ParserError::UnclosedBlock {
+                        src: self.source.to_string(),
+                        span: left_curly.span().into(),
+                    });
+                }
+                Some(_) => statements.push(self.parse_statement()?),
+            }
+        }
+        self.expect_token(TokenKind::RightCurly)
+            .map_err(|_| ParserError::UnclosedBlock {
+                src: self.source.to_string(),
+                span: (left_curly.span()).into(),
+            })?;
+
+        Ok(statements)
+    }
+
     fn parse_statement(&mut self) -> Result<Statement<'de>, ParserError> {
         match self.lexer.peek() {
             Some(Ok(Token {
@@ -250,24 +321,34 @@ impl<'de> Parser<'de> {
                 ..
             })) => {
                 self.lexer.next();
-                let ident = self.parse_identifier()?;
+                let name = self.parse_identifier()?;
                 self.expect_token(TokenKind::Eq)?;
-                let expr = self.parse_expr()?;
+                let value = self.parse_expr()?;
                 self.expect_token(TokenKind::Semicolon)?;
-                Ok(Statement::LetDeclaration(ident, expr))
+                Ok(Statement::LetDeclaration { name, value })
+            }
+            Some(Ok(Token {
+                kind: TokenKind::Fun,
+                ..
+            })) => {
+                self.lexer.next();
+                let name = self.parse_identifier()?;
+                let params = self.parse_param_list()?;
+                let body = self.parse_block()?;
+                Ok(Statement::FunctionDeclaration { name, params, body })
             }
             Some(Ok(Token {
                 kind: TokenKind::Identifier(_),
                 ..
             })) => {
-                let ident = self.parse_identifier()?;
+                let name = self.parse_identifier()?;
                 self.expect_token(TokenKind::Eq)?;
-                let expr = self.parse_expr()?;
+                let value = self.parse_expr()?;
                 self.expect_token(TokenKind::Semicolon)?;
-                Ok(Statement::Assignment(ident, expr))
+                Ok(Statement::Assignment { name, value })
             }
             Some(Ok(Token {
-                kind: TokenKind::Return,
+                kind: TokenKind::Ret,
                 ..
             })) => {
                 self.lexer.next();
@@ -281,6 +362,81 @@ impl<'de> Parser<'de> {
             }),
             Some(Ok(_)) => self.parse_expr().map(Statement::Expr),
         }
+    }
+
+    fn parse_param_list(&mut self) -> Result<Vec<Identifier<'de>>, ParserError> {
+        let left_paren = self.expect_token(TokenKind::LeftParen)?;
+        let mut last = left_paren.clone();
+
+        let mut params = vec![];
+
+        loop {
+            let token = match self.lexer.peek() {
+                Some(Ok(token)) => token.clone(),
+                Some(Err(e)) => return Err(e.into()),
+                None => {
+                    return Err(ParserError::UnclosedParamList {
+                        src: self.source.to_string(),
+                        span: (left_paren.offset..last.span().end).into(),
+                    })
+                }
+            };
+
+            match token {
+                Token {
+                    kind: TokenKind::RightParen,
+                    ..
+                } => break,
+                Token {
+                    kind: TokenKind::Identifier(name),
+                    ..
+                } => {
+                    last = self
+                        .lexer
+                        .next()
+                        .expect("Checked on peek")
+                        .expect("Checked on peek");
+                    params.push(Identifier { name });
+
+                    match self.lexer.peek() {
+                        Some(Ok(Token {
+                            kind: TokenKind::Comma,
+                            ..
+                        })) => {
+                            last = self
+                                .lexer
+                                .next()
+                                .expect("Checked on peek")
+                                .expect("Checked on peek");
+                        }
+                        Some(Ok(Token {
+                            kind: TokenKind::RightParen,
+                            ..
+                        })) => break,
+                        Some(Err(e)) => return Err(e.into()),
+                        _ => {
+                            return Err(ParserError::UnclosedParamList {
+                                src: self.source.to_string(),
+                                span: (left_paren.offset..last.span().end).into(),
+                            })
+                        }
+                    }
+                }
+                _ => {
+                    return Err(ParserError::UnclosedParamList {
+                        src: self.source.to_string(),
+                        span: (left_paren.offset..last.span().end).into(),
+                    });
+                }
+            }
+        }
+        self.expect_token(TokenKind::RightParen)
+            .map_err(|_| ParserError::UnclosedParamList {
+                src: self.source.to_string(),
+                span: (left_paren.offset..last.span().end).into(),
+            })?;
+
+        Ok(params)
     }
 
     fn parse_identifier(&mut self) -> Result<Identifier<'de>, ParserError> {
@@ -567,10 +723,10 @@ mod parse {
 
     #[test]
     fn return_statement() {
-        let mut parser = Parser::new("return 1;");
+        let mut parser = Parser::new("ret 1;");
 
         if let Some(Ok(expr)) = parser.next() {
-            assert_eq!(format!("{}", expr), "return 1;");
+            assert_eq!(format!("{}", expr), "ret 1;");
         } else {
             panic!("Invalid expression");
         };

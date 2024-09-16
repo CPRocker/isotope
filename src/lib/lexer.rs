@@ -68,6 +68,7 @@ pub enum TokenKind<'de> {
     Dot,
     Eq,
     EqEq,
+    Fun,
     Greater,
     GreaterEq,
     Identifier(&'de str),
@@ -81,7 +82,7 @@ pub enum TokenKind<'de> {
     Number(f64),
     Percent,
     Plus,
-    Return,
+    Ret,
     RightBracket,
     RightCurly,
     RightParen,
@@ -101,6 +102,7 @@ impl Display for TokenKind<'_> {
             TokenKind::Dot => write!(f, "."),
             TokenKind::Eq => write!(f, "="),
             TokenKind::EqEq => write!(f, "=="),
+            TokenKind::Fun => write!(f, "fun"),
             TokenKind::Greater => write!(f, ">"),
             TokenKind::GreaterEq => write!(f, ">="),
             TokenKind::Identifier(id) => write!(f, "{}", id),
@@ -114,7 +116,7 @@ impl Display for TokenKind<'_> {
             TokenKind::Number(n) => write!(f, "{}", n),
             TokenKind::Percent => write!(f, "%"),
             TokenKind::Plus => write!(f, "+"),
-            TokenKind::Return => write!(f, "return"),
+            TokenKind::Ret => write!(f, "ret"),
             TokenKind::RightBracket => write!(f, "]"),
             TokenKind::RightCurly => write!(f, "}}"),
             TokenKind::RightParen => write!(f, ")"),
@@ -274,8 +276,9 @@ impl<'de> Iterator for Lexer<'de> {
                 }
 
                 match id {
+                    "fun" => reserved!(Fun),
                     "let" => reserved!(Let),
-                    "return" => reserved!(Return),
+                    "ret" => reserved!(Ret),
                     _ => Some(Ok(Token {
                         kind: TokenKind::Identifier(id),
                         orig: id,
@@ -458,11 +461,12 @@ mod lex {
 
     #[test]
     fn keywords() {
-        let src = "let return";
+        let src = "let ret fun";
         let mut lexer = Lexer::new(src);
 
         assert_token!(lexer, Let, "let", 0);
-        assert_token!(lexer, Return, "return", 4);
+        assert_token!(lexer, Ret, "ret", 4);
+        assert_token!(lexer, Fun, "fun", 8);
     }
 
     #[test]
