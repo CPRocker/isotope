@@ -5,10 +5,6 @@ use thiserror::Error;
 
 #[derive(Error, Diagnostic, Debug, Clone, PartialEq)]
 pub enum LexerError {
-    UnexpectedEOF {
-        #[source_code]
-        src: String,
-    },
     UnexpectedToken {
         #[source_code]
         src: String,
@@ -35,7 +31,6 @@ pub enum LexerError {
 impl std::fmt::Display for LexerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            LexerError::UnexpectedEOF { .. } => write!(f, "Unexpected EOF"),
             LexerError::UnexpectedToken { src, span } => {
                 let token = &src[span.offset()..span.offset() + span.len()];
                 write!(f, "Unexpected token: `{}`", token)
@@ -47,105 +42,136 @@ impl std::fmt::Display for LexerError {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Token<'de> {
-    pub kind: TokenKind<'de>,
-    pub orig: &'de str,
+pub struct Token<'iso> {
+    pub kind: TokenKind,
+    pub orig: &'iso str,
     pub offset: usize,
 }
 
-impl<'de> Token<'de> {
+impl Token<'_> {
     pub fn span(&self) -> std::ops::Range<usize> {
         self.offset..self.offset + self.orig.len()
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum TokenKind<'de> {
+impl Display for Token<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.kind {
+            TokenKind::Bang
+            | TokenKind::BangEqual
+            | TokenKind::Caret
+            | TokenKind::Comma
+            | TokenKind::Dot
+            | TokenKind::Equal
+            | TokenKind::EqualEqual
+            | TokenKind::Function
+            | TokenKind::Greater
+            | TokenKind::GreaterEqual
+            | TokenKind::LeftBracket
+            | TokenKind::LeftCurly
+            | TokenKind::LeftParen
+            | TokenKind::Let
+            | TokenKind::Less
+            | TokenKind::LessEqual
+            | TokenKind::Minus
+            | TokenKind::Percent
+            | TokenKind::Plus
+            | TokenKind::Return
+            | TokenKind::RightBracket
+            | TokenKind::RightCurly
+            | TokenKind::RightParen
+            | TokenKind::Semicolon
+            | TokenKind::Slash
+            | TokenKind::Star => write!(f, "{}", self.kind),
+            TokenKind::Identifier | TokenKind::Number | TokenKind::String => {
+                write!(f, "{}", self.orig)
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TokenKind {
     Bang,
-    BangEq,
+    BangEqual,
     Caret,
     Comma,
     Dot,
-    Eq,
-    EqEq,
-    Fun,
+    Equal,
+    EqualEqual,
+    Function,
     Greater,
-    GreaterEq,
-    Identifier(&'de str),
+    GreaterEqual,
+    Identifier,
     LeftBracket,
     LeftCurly,
     LeftParen,
     Less,
-    LessEq,
+    LessEqual,
     Let,
     Minus,
-    Number(f64),
+    Number,
     Percent,
     Plus,
-    Ret,
+    Return,
     RightBracket,
     RightCurly,
     RightParen,
     Semicolon,
     Slash,
     Star,
-    String(&'de str),
+    String,
 }
 
-impl Display for TokenKind<'_> {
+impl Display for TokenKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             TokenKind::Bang => write!(f, "!"),
-            TokenKind::BangEq => write!(f, "!="),
+            TokenKind::BangEqual => write!(f, "!="),
             TokenKind::Caret => write!(f, "^"),
             TokenKind::Comma => write!(f, ","),
             TokenKind::Dot => write!(f, "."),
-            TokenKind::Eq => write!(f, "="),
-            TokenKind::EqEq => write!(f, "=="),
-            TokenKind::Fun => write!(f, "fun"),
+            TokenKind::Equal => write!(f, "="),
+            TokenKind::EqualEqual => write!(f, "=="),
+            TokenKind::Function => write!(f, "fn"),
             TokenKind::Greater => write!(f, ">"),
-            TokenKind::GreaterEq => write!(f, ">="),
-            TokenKind::Identifier(id) => write!(f, "{}", id),
+            TokenKind::GreaterEqual => write!(f, ">="),
+            TokenKind::Identifier => write!(f, "identifier"),
             TokenKind::LeftBracket => write!(f, "["),
             TokenKind::LeftCurly => write!(f, "{{"),
             TokenKind::LeftParen => write!(f, "("),
             TokenKind::Let => write!(f, "let"),
             TokenKind::Less => write!(f, "<"),
-            TokenKind::LessEq => write!(f, "<="),
+            TokenKind::LessEqual => write!(f, "<="),
             TokenKind::Minus => write!(f, "-"),
-            TokenKind::Number(n) => write!(f, "{}", n),
+            TokenKind::Number => write!(f, "number"),
             TokenKind::Percent => write!(f, "%"),
             TokenKind::Plus => write!(f, "+"),
-            TokenKind::Ret => write!(f, "ret"),
+            TokenKind::Return => write!(f, "return"),
             TokenKind::RightBracket => write!(f, "]"),
             TokenKind::RightCurly => write!(f, "}}"),
             TokenKind::RightParen => write!(f, ")"),
             TokenKind::Semicolon => write!(f, ";"),
             TokenKind::Slash => write!(f, "/"),
             TokenKind::Star => write!(f, "*"),
-            TokenKind::String(s) => write!(f, "\"{}\"", s), // TODO: escape strings
+            TokenKind::String => write!(f, "string"),
         }
     }
 }
 
-pub struct Lexer<'de> {
-    src: &'de str,
-    rest: &'de str,
+pub struct Lexer<'iso> {
+    src: &'iso str,
+    rest: &'iso str,
     offset: usize,
 }
 
-impl<'de> Lexer<'de> {
-    pub fn new(file_contents: &'de str) -> Self {
+impl<'iso> Lexer<'iso> {
+    pub fn new(file_contents: &'iso str) -> Self {
         Self {
             src: file_contents,
             rest: file_contents,
             offset: 0,
         }
-    }
-
-    fn trim_and_check(&mut self) -> bool {
-        self.trim();
-        self.peek().is_none()
     }
 
     fn trim(&mut self) {
@@ -181,12 +207,14 @@ enum Started {
     String,
 }
 
-impl<'de> Iterator for Lexer<'de> {
-    type Item = Result<Token<'de>, LexerError>;
+impl<'iso> Iterator for Lexer<'iso> {
+    type Item = Result<Token<'iso>, LexerError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.trim_and_check() {
-            return None;
+        self.trim();
+        match self.peek() {
+            Some(_) => {}
+            None => return None,
         }
 
         let c_onwards = self.rest;
@@ -240,13 +268,13 @@ impl<'de> Iterator for Lexer<'de> {
                     self.consume();
                     Some(Ok(Token {
                         kind: TokenKind::$if,
-                        orig: &self.src[c_at..self.offset],
+                        orig: self.src[c_at..self.offset].into(),
                         offset: c_at,
                     }))
                 } else {
                     Some(Ok(Token {
                         kind: TokenKind::$else,
-                        orig: &self.src[c_at..self.offset],
+                        orig: self.src[c_at..self.offset].into(),
                         offset: c_at,
                     }))
                 }
@@ -254,9 +282,9 @@ impl<'de> Iterator for Lexer<'de> {
         }
 
         match token {
-            Started::Bang => with_eq_or!(BangEq, Bang),
-            Started::Eq => with_eq_or!(EqEq, Eq),
-            Started::Greater => with_eq_or!(GreaterEq, Greater),
+            Started::Bang => with_eq_or!(BangEqual, Bang),
+            Started::Eq => with_eq_or!(EqualEqual, Equal),
+            Started::Greater => with_eq_or!(GreaterEqual, Greater),
             Started::Identifier => {
                 let id = c_onwards
                     .split_once(|d| !matches!(d, 'a'..='z' | 'A'..='Z' | '_' | '0'..='9'))
@@ -265,7 +293,7 @@ impl<'de> Iterator for Lexer<'de> {
                 self.rest = &c_onwards[id.len()..];
                 self.offset = c_at + id.len();
 
-                macro_rules! reserved {
+                macro_rules! identifier {
                     ($kind:ident) => {
                         Some(Ok(Token {
                             kind: TokenKind::$kind,
@@ -276,38 +304,29 @@ impl<'de> Iterator for Lexer<'de> {
                 }
 
                 match id {
-                    "fun" => reserved!(Fun),
-                    "let" => reserved!(Let),
-                    "ret" => reserved!(Ret),
-                    _ => Some(Ok(Token {
-                        kind: TokenKind::Identifier(id),
-                        orig: id,
-                        offset: c_at,
-                    })),
+                    "fn" => identifier!(Function),
+                    "let" => identifier!(Let),
+                    "return" => identifier!(Return),
+                    _ => identifier!(Identifier),
                 }
             }
-            Started::Less => with_eq_or!(LessEq, Less),
+            Started::Less => with_eq_or!(LessEqual, Less),
             Started::Number => {
                 let mut num = c_onwards
                     .split_once(|d| !matches!(d, '0'..='9' | '.'))
                     .map_or(c_onwards, |(num, _)| num);
                 let parts: Vec<&str> = num.split('.').collect();
 
-                let n = match parts.len() {
+                match parts.len() {
                     1 => {
                         // int
                         let s = parts[0];
                         num = &c_onwards[..s.len()];
-                        num.parse::<u32>()
-                            .expect("Must be an integer from match above")
-                            .into()
                     }
                     2.. => {
                         // float
                         let s = parts[0..=1].join(".");
                         num = &c_onwards[..s.len()];
-                        num.parse::<f64>()
-                            .expect("Must be a float from match above")
                     }
                     _ => unreachable!("Must be a number from match above"),
                 };
@@ -316,7 +335,7 @@ impl<'de> Iterator for Lexer<'de> {
                 self.offset = c_at + num.len();
 
                 Some(Ok(Token {
-                    kind: TokenKind::Number(n),
+                    kind: TokenKind::Number,
                     orig: &self.src[c_at..self.offset],
                     offset: c_at,
                 }))
@@ -356,7 +375,7 @@ impl<'de> Iterator for Lexer<'de> {
                     self.rest = rest;
                     self.offset += literal.len() + '"'.len_utf8();
                     return Some(Ok(Token {
-                        kind: TokenKind::String(literal),
+                        kind: TokenKind::String,
                         orig: &self.src[c_at..self.offset],
                         offset: c_at,
                     }));
@@ -388,20 +407,6 @@ mod lex {
                 assert_eq!(offset, $offset);
             } else {
                 panic!("Expected a {} token", $kind);
-            }
-        };
-        ($lexer:ident, $kind:ident, $orig:literal, $offset:literal, $value:literal) => {
-            if let Some(Ok(Token {
-                kind: TokenKind::$kind(val),
-                orig,
-                offset,
-            })) = $lexer.next()
-            {
-                assert_eq!(val, $value);
-                assert_eq!(orig, $orig);
-                assert_eq!(offset, $offset);
-            } else {
-                panic!("Expected a {} token", $kind($value));
             }
         };
     }
@@ -461,12 +466,12 @@ mod lex {
 
     #[test]
     fn keywords() {
-        let src = "let ret fun";
+        let src = "let return fn";
         let mut lexer = Lexer::new(src);
 
         assert_token!(lexer, Let, "let", 0);
-        assert_token!(lexer, Ret, "ret", 4);
-        assert_token!(lexer, Fun, "fun", 8);
+        assert_token!(lexer, Return, "return", 4);
+        assert_token!(lexer, Function, "fn", 11);
     }
 
     #[test]
@@ -474,11 +479,11 @@ mod lex {
         let src = "123 123.456 123.456.789";
         let mut lexer = Lexer::new(src);
 
-        assert_token!(lexer, Number, "123", 0, 123.);
-        assert_token!(lexer, Number, "123.456", 4, 123.456);
-        assert_token!(lexer, Number, "123.456", 12, 123.456);
+        assert_token!(lexer, Number, "123", 0);
+        assert_token!(lexer, Number, "123.456", 4);
+        assert_token!(lexer, Number, "123.456", 12);
         assert_token!(lexer, Dot, ".", 19);
-        assert_token!(lexer, Number, "789", 20, 789.);
+        assert_token!(lexer, Number, "789", 20);
     }
 
     #[test]
@@ -486,9 +491,9 @@ mod lex {
         let src = "foo bar baz";
         let mut lexer = Lexer::new(src);
 
-        assert_token!(lexer, Identifier, "foo", 0, "foo");
-        assert_token!(lexer, Identifier, "bar", 4, "bar");
-        assert_token!(lexer, Identifier, "baz", 8, "baz");
+        assert_token!(lexer, Identifier, "foo", 0);
+        assert_token!(lexer, Identifier, "bar", 4);
+        assert_token!(lexer, Identifier, "baz", 8);
     }
 
     #[test]
@@ -498,15 +503,9 @@ mod lex {
         z""#;
         let mut lexer = Lexer::new(src);
 
-        assert_token!(lexer, String, "\"foo\"", 0, "foo");
-        assert_token!(lexer, String, "\"bar\"", 6, "bar");
-        assert_token!(
-            lexer,
-            String,
-            "\"b\n        a\n        z\"",
-            12,
-            "b\n        a\n        z"
-        );
+        assert_token!(lexer, String, "\"foo\"", 0);
+        assert_token!(lexer, String, "\"bar\"", 6);
+        assert_token!(lexer, String, "\"b\n        a\n        z\"", 12);
     }
 
     #[test]
@@ -527,22 +526,22 @@ mod lex {
         let src = "= == === ! != !!= > >= >>= < <= <<=";
         let mut lexer = Lexer::new(src);
 
-        assert_token!(lexer, Eq, "=", 0);
-        assert_token!(lexer, EqEq, "==", 2);
-        assert_token!(lexer, EqEq, "==", 5);
-        assert_token!(lexer, Eq, "=", 7);
+        assert_token!(lexer, Equal, "=", 0);
+        assert_token!(lexer, EqualEqual, "==", 2);
+        assert_token!(lexer, EqualEqual, "==", 5);
+        assert_token!(lexer, Equal, "=", 7);
         assert_token!(lexer, Bang, "!", 9);
-        assert_token!(lexer, BangEq, "!=", 11);
+        assert_token!(lexer, BangEqual, "!=", 11);
         assert_token!(lexer, Bang, "!", 14);
-        assert_token!(lexer, BangEq, "!=", 15);
+        assert_token!(lexer, BangEqual, "!=", 15);
         assert_token!(lexer, Greater, ">", 18);
-        assert_token!(lexer, GreaterEq, ">=", 20);
+        assert_token!(lexer, GreaterEqual, ">=", 20);
         assert_token!(lexer, Greater, ">", 23);
-        assert_token!(lexer, GreaterEq, ">=", 24);
+        assert_token!(lexer, GreaterEqual, ">=", 24);
         assert_token!(lexer, Less, "<", 27);
-        assert_token!(lexer, LessEq, "<=", 29);
+        assert_token!(lexer, LessEqual, "<=", 29);
         assert_token!(lexer, Less, "<", 32);
-        assert_token!(lexer, LessEq, "<=", 33);
+        assert_token!(lexer, LessEqual, "<=", 33);
     }
 
     // TODO: test error cases

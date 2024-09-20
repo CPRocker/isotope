@@ -13,15 +13,17 @@ pub enum ParserError {
         #[diagnostic_source]
         LexerError,
     ),
-    UnexpectedEOF {
-        #[source_code]
-        src: String,
-    },
-    UnexpectedToken {
+    ParseFloatError {
         #[source_code]
         src: String,
         #[label = "here"]
         span: SourceSpan,
+        #[source]
+        error: std::num::ParseFloatError,
+    },
+    UnexpectedEOF {
+        #[source_code]
+        src: String,
     },
     ExpectedToken {
         #[source_code]
@@ -73,11 +75,10 @@ impl std::fmt::Display for ParserError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ParserError::LexerError { .. } => write!(f, "Lexer error"),
-            ParserError::UnexpectedEOF { .. } => write!(f, "Unexpected EOF"),
-            ParserError::UnexpectedToken { src, span } => {
-                let token = &src[span.offset()..span.offset() + span.len()];
-                write!(f, "Unexpected token: `{}`", token)
+            ParserError::ParseFloatError { .. } => {
+                write!(f, "Failed to parse floating point number")
             }
+            ParserError::UnexpectedEOF { .. } => write!(f, "Unexpected EOF"),
             ParserError::ExpectedToken {
                 src,
                 span,
@@ -124,7 +125,7 @@ impl<'de> Display for Statement<'de> {
             Statement::Assignment { name, value } => write!(f, "{} = {};", name, value),
             Statement::Expr(expr) => write!(f, "{}", expr),
             Statement::FunctionDeclaration { name, params, body } => {
-                write!(f, "fun {}(", name)?;
+                write!(f, "fn {}(", name)?;
                 for (i, param) in params.iter().enumerate() {
                     write!(f, "{}", param)?;
                     if i < params.len() - 1 {
@@ -139,7 +140,7 @@ impl<'de> Display for Statement<'de> {
             }
             Statement::LetDeclaration { name, value } => write!(f, "let {} = {};", name, value),
             Statement::Nop => write!(f, "nop;"),
-            Statement::Return(expr) => write!(f, "ret {};", expr),
+            Statement::Return(expr) => write!(f, "return {};", expr),
         }
     }
 }
@@ -272,14 +273,14 @@ impl<'de> Iterator for Parser<'de> {
 impl<'de> Parser<'de> {
     fn expect_token(&mut self, expected: TokenKind) -> Result<Token<'de>, ParserError> {
         match self.lexer.next() {
-            Some(Ok(t @ Token { kind, orig, offset })) => {
+            Some(Ok(token @ Token { kind, .. })) => {
                 if kind == expected {
-                    return Ok(t);
+                    return Ok(token);
                 }
 
                 Err(ParserError::ExpectedToken {
                     src: self.source.to_string(),
-                    span: (offset..offset + orig.len()).into(),
+                    span: token.span().into(),
                     expected: format!("{}", expected),
                 })
             }
@@ -322,59 +323,57 @@ impl<'de> Parser<'de> {
     }
 
     fn parse_statement(&mut self) -> Result<Statement<'de>, ParserError> {
-        match self.lexer.peek() {
-            Some(Ok(Token {
+        match self.lexer.peek().expect("peek already checked") {
+            Ok(Token {
                 kind: TokenKind::Semicolon,
                 ..
-            })) => {
+            }) => {
                 self.lexer.next();
                 Ok(Statement::Nop)
             }
-            Some(Ok(Token {
+            Ok(Token {
                 kind: TokenKind::Let,
                 ..
-            })) => {
+            }) => {
                 self.lexer.next();
                 let name = self.parse_identifier()?;
-                self.expect_token(TokenKind::Eq)?;
+                self.expect_token(TokenKind::Equal)?;
                 let value = self.parse_expr()?;
                 self.expect_token(TokenKind::Semicolon)?;
                 Ok(Statement::LetDeclaration { name, value })
             }
-            Some(Ok(Token {
-                kind: TokenKind::Fun,
+            Ok(Token {
+                kind: TokenKind::Function,
                 ..
-            })) => {
+            }) => {
                 self.lexer.next();
                 let name = self.parse_identifier()?;
                 let params = self.parse_param_list()?;
                 let body = self.parse_block()?;
                 Ok(Statement::FunctionDeclaration { name, params, body })
             }
-            Some(Ok(Token {
-                kind: TokenKind::Identifier(_),
+            Ok(Token {
+                kind: TokenKind::Identifier,
                 ..
-            })) => {
+            }) => {
+                // TODO: support function calls on identifier or as expression
                 let name = self.parse_identifier()?;
-                self.expect_token(TokenKind::Eq)?;
+                self.expect_token(TokenKind::Equal)?;
                 let value = self.parse_expr()?;
                 self.expect_token(TokenKind::Semicolon)?;
                 Ok(Statement::Assignment { name, value })
             }
-            Some(Ok(Token {
-                kind: TokenKind::Ret,
+            Ok(Token {
+                kind: TokenKind::Return,
                 ..
-            })) => {
+            }) => {
                 self.lexer.next();
                 let expr = self.parse_expr()?;
                 self.expect_token(TokenKind::Semicolon)?;
                 Ok(Statement::Return(expr))
             }
-            Some(Err(e)) => Err(e.into()),
-            None => Err(ParserError::UnexpectedEOF {
-                src: self.source.to_string(),
-            }),
-            Some(Ok(_)) => self.parse_expr().map(Statement::Expr),
+            Ok(_) => self.parse_expr().map(Statement::Expr),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -402,7 +401,8 @@ impl<'de> Parser<'de> {
                     ..
                 } => break,
                 Token {
-                    kind: TokenKind::Identifier(name),
+                    kind: TokenKind::Identifier,
+                    orig,
                     ..
                 } => {
                     last = self
@@ -410,7 +410,7 @@ impl<'de> Parser<'de> {
                         .next()
                         .expect("Checked on peek")
                         .expect("Checked on peek");
-                    params.push(Identifier { name });
+                    params.push(Identifier { name: orig });
 
                     match self.lexer.peek() {
                         Some(Ok(Token {
@@ -456,9 +456,10 @@ impl<'de> Parser<'de> {
     fn parse_identifier(&mut self) -> Result<Identifier<'de>, ParserError> {
         match self.lexer.next() {
             Some(Ok(Token {
-                kind: TokenKind::Identifier(s),
+                kind: TokenKind::Identifier,
+                orig,
                 ..
-            })) => Ok(Identifier { name: s }),
+            })) => Ok(Identifier { name: orig }),
             Some(Ok(Token { orig, offset, .. })) => Err(ParserError::ExpectedIdentifier {
                 src: self.source.to_string(),
                 span: (offset..offset + orig.len()).into(),
@@ -510,18 +511,37 @@ impl<'de> Parser<'de> {
     fn parse_expr_within(&mut self, min_bp: u8) -> Result<Expr<'de>, ParserError> {
         let mut lhs = match self.lexer.next() {
             // literals
+            Some(Ok(
+                token @ Token {
+                    kind: TokenKind::Number,
+                    orig,
+                    ..
+                },
+            )) => {
+                let num = orig
+                    .parse::<f64>()
+                    .map_err(|e| ParserError::ParseFloatError {
+                        src: self.source.to_string(),
+                        span: token.span().into(),
+                        error: e,
+                    })?;
+                // TODO: add other number types
+                Expr::Atom(Atom::Number(num))
+            }
             Some(Ok(Token {
-                kind: TokenKind::Number(n),
+                kind: TokenKind::String,
+                orig,
                 ..
-            })) => Expr::Atom(Atom::Number(n)),
+            })) => {
+                let s = &orig[1..orig.len() - 1];
+                // TODO: escape sequences
+                Expr::Atom(Atom::String(s))
+            }
             Some(Ok(Token {
-                kind: TokenKind::String(s),
+                kind: TokenKind::Identifier,
+                orig,
                 ..
-            })) => Expr::Atom(Atom::String(s)),
-            Some(Ok(Token {
-                kind: TokenKind::Identifier(s),
-                ..
-            })) => Expr::Atom(Atom::Identifier(s)),
+            })) => Expr::Atom(Atom::Identifier(orig)),
             // parenthesized expression
             Some(Ok(Token {
                 kind: TokenKind::LeftParen,
@@ -568,10 +588,10 @@ impl<'de> Parser<'de> {
                     src: self.source.to_string(),
                 });
             }
-            Some(Ok(Token { orig, offset, .. })) => {
-                return Err(ParserError::UnexpectedToken {
+            Some(Ok(token)) => {
+                return Err(ParserError::ExpectedExpression {
                     src: self.source.to_string(),
-                    span: (offset..offset + orig.len()).into(),
+                    span: token.span().into(),
                 });
             }
         };
@@ -588,19 +608,19 @@ impl<'de> Parser<'de> {
         loop {
             let op = match self.lexer.peek() {
                 some_ok_token!(Plus) => Op::Add,
-                some_ok_token!(Eq) => Op::Assign,
+                some_ok_token!(Equal) => Op::Assign,
                 some_ok_token!(LeftParen) => Op::Call,
                 some_ok_token!(Slash) => Op::Div,
-                some_ok_token!(EqEq) => Op::Eq,
+                some_ok_token!(EqualEqual) => Op::Eq,
                 some_ok_token!(Dot) => Op::Field,
                 some_ok_token!(Greater) => Op::Gt,
-                some_ok_token!(GreaterEq) => Op::Gte,
+                some_ok_token!(GreaterEqual) => Op::Gte,
                 some_ok_token!(LeftBracket) => Op::Index,
                 some_ok_token!(Less) => Op::Lt,
-                some_ok_token!(LessEq) => Op::Lte,
+                some_ok_token!(LessEqual) => Op::Lte,
                 some_ok_token!(Percent) => Op::Mod,
                 some_ok_token!(Star) => Op::Mul,
-                some_ok_token!(BangEq) => Op::Neq,
+                some_ok_token!(BangEqual) => Op::Neq,
                 some_ok_token!(Caret) => Op::Pow,
                 some_ok_token!(Minus) => Op::Sub,
                 Some(Err(e)) => return Err(e.into()),
@@ -737,10 +757,10 @@ mod parse {
 
     #[test]
     fn return_statement() {
-        let mut parser = Parser::new("ret 1;");
+        let mut parser = Parser::new("return 1;");
 
         if let Some(Ok(expr)) = parser.next() {
-            assert_eq!(format!("{}", expr), "ret 1;");
+            assert_eq!(format!("{}", expr), "return 1;");
         } else {
             panic!("Invalid expression");
         };
