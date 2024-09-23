@@ -44,6 +44,12 @@ pub enum ParserError {
         #[label = "here"]
         span: SourceSpan,
     },
+    InvalidElseStatement {
+        #[source_code]
+        src: String,
+        #[label = "here"]
+        span: SourceSpan,
+    },
     InvalidPostfixOperator {
         #[source_code]
         src: String,
@@ -89,6 +95,12 @@ impl std::fmt::Display for ParserError {
             }
             ParserError::ExpectedExpression { .. } => write!(f, "Expected expression"),
             ParserError::ExpectedIdentifier { .. } => write!(f, "Expected identifier"),
+            ParserError::InvalidElseStatement { .. } => {
+                write!(
+                    f,
+                    "Invalid else statement: expected `else if` or `else` block"
+                )
+            }
             ParserError::InvalidPostfixOperator { src, span } => {
                 let token = &src[span.offset()..span.offset() + span.len()];
                 write!(f, "Invalid postfix operator: `{}`", token)
@@ -105,15 +117,24 @@ pub enum Statement<'de> {
         name: Identifier<'de>,
         value: Expr<'de>,
     },
+    Break,
     Expr(Expr<'de>),
     FunctionDeclaration {
         name: Identifier<'de>,
         params: Vec<Identifier<'de>>,
         body: Vec<Statement<'de>>,
     },
+    If {
+        condition: Expr<'de>,
+        body: Vec<Statement<'de>>,
+        else_body: Option<Vec<Statement<'de>>>,
+    },
     LetDeclaration {
         name: Identifier<'de>,
         value: Expr<'de>,
+    },
+    Loop {
+        body: Vec<Statement<'de>>,
     },
     Nop,
     Return(Expr<'de>),
@@ -123,6 +144,7 @@ impl<'de> Display for Statement<'de> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Statement::Assignment { name, value } => write!(f, "{} = {};", name, value),
+            Statement::Break => write!(f, "break;"),
             Statement::Expr(expr) => write!(f, "{}", expr),
             Statement::FunctionDeclaration { name, params, body } => {
                 write!(f, "fn {}(", name)?;
@@ -138,7 +160,33 @@ impl<'de> Display for Statement<'de> {
                 }
                 write!(f, "}}")
             }
+            Statement::If {
+                condition,
+                body,
+                else_body,
+            } => {
+                write!(f, "if({}) {{ ", condition)?;
+                for statement in body {
+                    write!(f, "{} ", statement)?;
+                }
+                write!(f, "}}")?;
+                if let Some(else_body) = else_body {
+                    write!(f, " else {{ ")?;
+                    for statement in else_body {
+                        write!(f, "{} ", statement)?;
+                    }
+                    write!(f, "}}")?;
+                }
+                Ok(())
+            }
             Statement::LetDeclaration { name, value } => write!(f, "let {} = {};", name, value),
+            Statement::Loop { body } => {
+                write!(f, "loop {{ ")?;
+                for statement in body {
+                    write!(f, "{} ", statement)?;
+                }
+                write!(f, "}}")
+            }
             Statement::Nop => write!(f, "nop;"),
             Statement::Return(expr) => write!(f, "return {};", expr),
         }
@@ -165,6 +213,7 @@ pub enum Expr<'de> {
 impl<'de> Display for Expr<'de> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Expr::Atom(Atom::Boolean(b)) => write!(f, "{}", b),
             Expr::Atom(Atom::Identifier(s)) => write!(f, "{}", s),
             Expr::Atom(Atom::Number(n)) => write!(f, "{}", n),
             Expr::Atom(Atom::String(s)) => write!(f, "\"{}\"", s),
@@ -193,6 +242,7 @@ impl<'de> Display for Expr<'de> {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Atom<'de> {
+    Boolean(bool),
     Identifier(&'de str),
     Number(f64),
     String(&'de str),
@@ -332,15 +382,18 @@ impl<'de> Parser<'de> {
                 Ok(Statement::Nop)
             }
             Ok(Token {
-                kind: TokenKind::Let,
+                kind: TokenKind::LeftCurly,
+                ..
+            }) => {
+                todo!()
+            }
+            Ok(Token {
+                kind: TokenKind::Break,
                 ..
             }) => {
                 self.lexer.next();
-                let name = self.parse_identifier()?;
-                self.expect_token(TokenKind::Equal)?;
-                let value = self.parse_expr()?;
                 self.expect_token(TokenKind::Semicolon)?;
-                Ok(Statement::LetDeclaration { name, value })
+                Ok(Statement::Break)
             }
             Ok(Token {
                 kind: TokenKind::Function,
@@ -364,6 +417,76 @@ impl<'de> Parser<'de> {
                 Ok(Statement::Assignment { name, value })
             }
             Ok(Token {
+                kind: TokenKind::If,
+                ..
+            }) => {
+                self.lexer.next();
+                self.expect_token(TokenKind::LeftParen)?;
+                let condition = self.parse_expr()?;
+                self.expect_token(TokenKind::RightParen)?;
+                let body = self.parse_block()?;
+
+                let else_token = if let Some(Ok(Token {
+                    kind: TokenKind::Else,
+                    ..
+                })) = self.lexer.peek()
+                {
+                    self.lexer
+                        .next()
+                        .expect("Checked on peek")
+                        .expect("Checked on peek")
+                } else {
+                    return Ok(Statement::If {
+                        condition,
+                        body,
+                        else_body: None,
+                    });
+                };
+
+                match self.lexer.peek() {
+                    Some(Ok(Token {
+                        kind: TokenKind::If,
+                        ..
+                    })) => Ok(Statement::If {
+                        condition,
+                        body,
+                        else_body: Some(vec![self.parse_statement()?]),
+                    }),
+                    Some(Ok(Token {
+                        kind: TokenKind::LeftCurly,
+                        ..
+                    })) => Ok(Statement::If {
+                        condition,
+                        body,
+                        else_body: Some(self.parse_block()?),
+                    }),
+                    Some(Err(e)) => Err(e.into()),
+                    _ => Err(ParserError::InvalidElseStatement {
+                        src: self.source.to_string(),
+                        span: else_token.span().into(),
+                    }),
+                }
+            }
+            Ok(Token {
+                kind: TokenKind::Let,
+                ..
+            }) => {
+                self.lexer.next();
+                let name = self.parse_identifier()?;
+                self.expect_token(TokenKind::Equal)?;
+                let value = self.parse_expr()?;
+                self.expect_token(TokenKind::Semicolon)?;
+                Ok(Statement::LetDeclaration { name, value })
+            }
+            Ok(Token {
+                kind: TokenKind::Loop,
+                ..
+            }) => {
+                self.lexer.next();
+                let body = self.parse_block()?;
+                Ok(Statement::Loop { body })
+            }
+            Ok(Token {
                 kind: TokenKind::Return,
                 ..
             }) => {
@@ -371,6 +494,12 @@ impl<'de> Parser<'de> {
                 let expr = self.parse_expr()?;
                 self.expect_token(TokenKind::Semicolon)?;
                 Ok(Statement::Return(expr))
+            }
+            Ok(Token {
+                kind: TokenKind::Else,
+                ..
+            }) => {
+                todo!("Invalid start of statement")
             }
             Ok(_) => self.parse_expr().map(Statement::Expr),
             Err(e) => Err(e.into()),
@@ -511,6 +640,15 @@ impl<'de> Parser<'de> {
     fn parse_expr_within(&mut self, min_bp: u8) -> Result<Expr<'de>, ParserError> {
         let mut lhs = match self.lexer.next() {
             // literals
+            Some(Ok(Token {
+                kind: TokenKind::False,
+                ..
+            })) => Expr::Atom(Atom::Boolean(false)),
+            Some(Ok(Token {
+                kind: TokenKind::Identifier,
+                orig,
+                ..
+            })) => Expr::Atom(Atom::Identifier(orig)),
             Some(Ok(
                 token @ Token {
                     kind: TokenKind::Number,
@@ -543,10 +681,9 @@ impl<'de> Parser<'de> {
                 Expr::Atom(Atom::String(s))
             }
             Some(Ok(Token {
-                kind: TokenKind::Identifier,
-                orig,
+                kind: TokenKind::True,
                 ..
-            })) => Expr::Atom(Atom::Identifier(orig)),
+            })) => Expr::Atom(Atom::Boolean(true)),
             // parenthesized expression
             Some(Ok(Token {
                 kind: TokenKind::LeftParen,
@@ -731,10 +868,9 @@ mod tests {
     fn nop() {
         let mut parser = Parser::new(";;;");
 
-        if let Some(Ok(expr)) = parser.next() {
-            assert_eq!(expr, Statement::Nop);
-        } else {
-            panic!("Invalid expression");
+        match parser.next() {
+            Some(Ok(Statement::Nop)) => {}
+            _ => panic!("Expected `Statement::Nop`"),
         };
     }
 
@@ -742,10 +878,12 @@ mod tests {
     fn let_statement() {
         let mut parser = Parser::new("let x = 1;");
 
-        if let Some(Ok(expr)) = parser.next() {
-            assert_eq!(format!("{}", expr), "let x = 1;");
-        } else {
-            panic!("Invalid expression");
+        match parser.next() {
+            Some(Ok(Statement::LetDeclaration { name, value })) => {
+                assert_eq!(name.name, "x");
+                assert_eq!(format!("{}", value), "1");
+            }
+            _ => panic!("Expected `Statement::Let`"),
         };
     }
 
@@ -753,10 +891,12 @@ mod tests {
     fn assignment_statement() {
         let mut parser = Parser::new("x = 1;");
 
-        if let Some(Ok(expr)) = parser.next() {
-            assert_eq!(format!("{}", expr), "x = 1;");
-        } else {
-            panic!("Invalid expression");
+        match parser.next() {
+            Some(Ok(Statement::Assignment { name, value })) => {
+                assert_eq!(name.name, "x");
+                assert_eq!(format!("{}", value), "1");
+            }
+            _ => panic!("Expected `Statement::Assignment`"),
         };
     }
 
@@ -764,10 +904,102 @@ mod tests {
     fn return_statement() {
         let mut parser = Parser::new("return 1;");
 
-        if let Some(Ok(expr)) = parser.next() {
-            assert_eq!(format!("{}", expr), "return 1;");
-        } else {
-            panic!("Invalid expression");
+        match parser.next() {
+            Some(Ok(Statement::Return(expr))) => {
+                assert_eq!(format!("{}", expr), "1");
+            }
+            _ => panic!("Expected `Statement::Return`"),
+        };
+    }
+
+    #[test]
+    fn break_statement() {
+        let mut parser = Parser::new("break;");
+
+        match parser.next() {
+            Some(Ok(Statement::Break)) => {}
+            _ => panic!("Expected `Statement::Break`"),
+        };
+    }
+
+    #[test]
+    fn loop_statement() {
+        let mut parser = Parser::new("loop { let x = 1; break; }");
+
+        match parser.next() {
+            Some(Ok(Statement::Loop { body })) => {
+                assert_eq!(body.len(), 2);
+                assert_eq!(format!("{}", body[0]), "let x = 1;");
+                assert_eq!(format!("{}", body[1]), "break;");
+            }
+            _ => panic!("Expected `Statement::Loop`"),
+        };
+    }
+
+    #[test]
+    fn if_statement() {
+        let mut parser = Parser::new("if(true) { let x = 1; }");
+
+        match parser.next() {
+            Some(Ok(Statement::If {
+                condition,
+                body,
+                else_body,
+            })) => {
+                assert_eq!(format!("{}", condition), "true");
+                assert_eq!(body.len(), 1);
+                assert_eq!(format!("{}", body[0]), "let x = 1;");
+                assert!(else_body.is_none());
+            }
+            _ => panic!("Expected `Statement::If`"),
+        };
+    }
+
+    #[test]
+    fn if_else_statement() {
+        let mut parser = Parser::new("if(true) { let x = 1; } else { let x = 2; }");
+
+        match parser.next() {
+            Some(Ok(Statement::If {
+                condition,
+                body,
+                else_body,
+            })) => {
+                assert_eq!(format!("{}", condition), "true");
+                assert_eq!(body.len(), 1);
+                assert_eq!(format!("{}", body[0]), "let x = 1;");
+                if let Some(else_body) = else_body {
+                    assert_eq!(else_body.len(), 1);
+                    assert_eq!(format!("{}", else_body[0]), "let x = 2;");
+                } else {
+                    panic!("Expected `else_body`");
+                }
+            }
+            _ => panic!("Expected `Statement::If`"),
+        };
+    }
+
+    #[test]
+    fn if_else_if_statement() {
+        let mut parser = Parser::new("if(true) { let x = 1; } else if(false) { let x = 2; }");
+
+        match parser.next() {
+            Some(Ok(Statement::If {
+                condition,
+                body,
+                else_body,
+            })) => {
+                assert_eq!(format!("{}", condition), "true");
+                assert_eq!(body.len(), 1);
+                assert_eq!(format!("{}", body[0]), "let x = 1;");
+                if let Some(else_body) = else_body {
+                    assert_eq!(else_body.len(), 1);
+                    assert_eq!(format!("{}", else_body[0]), "if(false) { let x = 2; }");
+                } else {
+                    panic!("Expected `else_body`");
+                }
+            }
+            _ => panic!("Expected `Statement::If`"),
         };
     }
 
