@@ -59,20 +59,25 @@ impl Display for Token<'_> {
         match self.kind {
             TokenKind::Bang
             | TokenKind::BangEqual
+            | TokenKind::Break
             | TokenKind::Caret
             | TokenKind::Comma
             | TokenKind::Dot
             | TokenKind::Equal
             | TokenKind::EqualEqual
+            | TokenKind::Else
+            | TokenKind::False
             | TokenKind::Function
             | TokenKind::Greater
             | TokenKind::GreaterEqual
+            | TokenKind::If
             | TokenKind::LeftBracket
             | TokenKind::LeftCurly
             | TokenKind::LeftParen
             | TokenKind::Let
             | TokenKind::Less
             | TokenKind::LessEqual
+            | TokenKind::Loop
             | TokenKind::Minus
             | TokenKind::Percent
             | TokenKind::Plus
@@ -82,7 +87,8 @@ impl Display for Token<'_> {
             | TokenKind::RightParen
             | TokenKind::Semicolon
             | TokenKind::Slash
-            | TokenKind::Star => write!(f, "{}", self.kind),
+            | TokenKind::Star
+            | TokenKind::True => write!(f, "{}", self.kind),
             TokenKind::Identifier | TokenKind::Number | TokenKind::String => {
                 write!(f, "{}", self.orig)
             }
@@ -94,21 +100,26 @@ impl Display for Token<'_> {
 pub enum TokenKind {
     Bang,
     BangEqual,
+    Break,
     Caret,
     Comma,
     Dot,
+    Else,
     Equal,
     EqualEqual,
+    False,
     Function,
     Greater,
     GreaterEqual,
     Identifier,
+    If,
     LeftBracket,
     LeftCurly,
     LeftParen,
     Less,
     LessEqual,
     Let,
+    Loop,
     Minus,
     Number,
     Percent,
@@ -121,6 +132,7 @@ pub enum TokenKind {
     Slash,
     Star,
     String,
+    True,
 }
 
 impl Display for TokenKind {
@@ -128,21 +140,26 @@ impl Display for TokenKind {
         match self {
             TokenKind::Bang => write!(f, "!"),
             TokenKind::BangEqual => write!(f, "!="),
+            TokenKind::Break => write!(f, "break"),
             TokenKind::Caret => write!(f, "^"),
             TokenKind::Comma => write!(f, ","),
             TokenKind::Dot => write!(f, "."),
             TokenKind::Equal => write!(f, "="),
             TokenKind::EqualEqual => write!(f, "=="),
+            TokenKind::Else => write!(f, "else"),
+            TokenKind::False => write!(f, "false"),
             TokenKind::Function => write!(f, "fn"),
             TokenKind::Greater => write!(f, ">"),
             TokenKind::GreaterEqual => write!(f, ">="),
             TokenKind::Identifier => write!(f, "identifier"),
+            TokenKind::If => write!(f, "if"),
             TokenKind::LeftBracket => write!(f, "["),
             TokenKind::LeftCurly => write!(f, "{{"),
             TokenKind::LeftParen => write!(f, "("),
             TokenKind::Let => write!(f, "let"),
             TokenKind::Less => write!(f, "<"),
             TokenKind::LessEqual => write!(f, "<="),
+            TokenKind::Loop => write!(f, "loop"),
             TokenKind::Minus => write!(f, "-"),
             TokenKind::Number => write!(f, "number"),
             TokenKind::Percent => write!(f, "%"),
@@ -155,6 +172,7 @@ impl Display for TokenKind {
             TokenKind::Slash => write!(f, "/"),
             TokenKind::Star => write!(f, "*"),
             TokenKind::String => write!(f, "string"),
+            TokenKind::True => write!(f, "true"),
         }
     }
 }
@@ -304,9 +322,15 @@ impl<'iso> Iterator for Lexer<'iso> {
                 }
 
                 match id {
+                    "break" => identifier!(Break),
+                    "else" => identifier!(Else),
+                    "false" => identifier!(False),
                     "fn" => identifier!(Function),
+                    "if" => identifier!(If),
                     "let" => identifier!(Let),
+                    "loop" => identifier!(Loop),
                     "return" => identifier!(Return),
+                    "true" => identifier!(True),
                     _ => identifier!(Identifier),
                 }
             }
@@ -466,12 +490,18 @@ mod tests {
 
     #[test]
     fn keywords() {
-        let src = "let return fn";
+        let src = "let return fn if else loop break true false";
         let mut lexer = Lexer::new(src);
 
         assert_token!(lexer, Let, "let", 0);
         assert_token!(lexer, Return, "return", 4);
         assert_token!(lexer, Function, "fn", 11);
+        assert_token!(lexer, If, "if", 14);
+        assert_token!(lexer, Else, "else", 17);
+        assert_token!(lexer, Loop, "loop", 22);
+        assert_token!(lexer, Break, "break", 27);
+        assert_token!(lexer, True, "true", 33);
+        assert_token!(lexer, False, "false", 38);
     }
 
     #[test]
