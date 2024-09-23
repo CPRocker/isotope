@@ -526,6 +526,7 @@ impl<'de> Parser<'de> {
                         error: e,
                     })?;
                 // TODO: add other number types
+
                 Expr::Atom(Atom::Number(num))
             }
             Some(Ok(Token {
@@ -533,8 +534,12 @@ impl<'de> Parser<'de> {
                 orig,
                 ..
             })) => {
-                let s = &orig[1..orig.len() - 1];
+                let mut chars = orig.chars();
+                chars.next();
+                chars.next_back();
+                let s = chars.as_str();
                 // TODO: escape sequences
+
                 Expr::Atom(Atom::String(s))
             }
             Some(Ok(Token {
@@ -712,7 +717,7 @@ impl<'de> Parser<'de> {
 }
 
 #[cfg(test)]
-mod parse {
+mod tests {
     use super::*;
 
     #[test]
@@ -847,5 +852,59 @@ mod parse {
         }
     }
 
-    // TODO: test error cases
+    mod errors {
+        use super::*;
+
+        #[test]
+        fn unclosed_block() {
+            let src = "fn foo() { let x = 1;";
+            let mut parser = Parser::new(src);
+
+            match parser.next() {
+                Some(Err(ParserError::UnclosedBlock { span, .. })) => {
+                    assert_eq!(span, (9..10).into())
+                }
+                _ => panic!("Expected `ParserError::UnclosedBlock`"),
+            }
+        }
+
+        #[test]
+        fn unclosed_param_list() {
+            let src = "fn foo(x, y { let x = 1;";
+            let mut parser = Parser::new(src);
+
+            match parser.next() {
+                Some(Err(ParserError::UnclosedParamList { span, .. })) => {
+                    assert_eq!(span, (6..11).into())
+                }
+                _ => panic!("Expected `ParserError::UnclosedParamList`"),
+            }
+        }
+
+        #[test]
+        fn let_without_identifier() {
+            let src = "let = 1;";
+            let mut parser = Parser::new(src);
+
+            match parser.next() {
+                Some(Err(ParserError::ExpectedIdentifier { span, .. })) => {
+                    assert_eq!(span, (4..5).into())
+                }
+                _ => panic!("Expected `ParserError::ExpectedIdentifier`"),
+            }
+        }
+
+        #[test]
+        fn let_without_expression() {
+            let src = "let x = ;";
+            let mut parser = Parser::new(src);
+
+            match parser.next() {
+                Some(Err(ParserError::ExpectedExpression { span, .. })) => {
+                    assert_eq!(span, (8..9).into())
+                }
+                _ => panic!("Expected `ParserError::ExpectedExpression`"),
+            }
+        }
+    }
 }

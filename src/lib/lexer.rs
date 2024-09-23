@@ -391,7 +391,7 @@ impl<'iso> Iterator for Lexer<'iso> {
 }
 
 #[cfg(test)]
-mod lex {
+mod tests {
     use super::TokenKind::*;
     use super::*;
 
@@ -544,5 +544,53 @@ mod lex {
         assert_token!(lexer, LessEqual, "<=", 33);
     }
 
-    // TODO: test error cases
+    mod errors {
+        use super::*;
+        #[test]
+        fn unexpected_token() {
+            let src = "let $ = 1;";
+            let mut lexer = Lexer::new(src);
+
+            assert_token!(lexer, Let, "let", 0);
+
+            match lexer.next() {
+                Some(Err(LexerError::UnexpectedToken { span, .. })) => {
+                    assert_eq!(span, (4..5).into())
+                }
+                _ => panic!("Expected `LexerError::UnexpectedToken`"),
+            }
+        }
+
+        #[test]
+        fn unclosed_block_comment() {
+            let src = "let /* testing  = 1;";
+            let mut lexer = Lexer::new(src);
+
+            assert_token!(lexer, Let, "let", 0);
+
+            match lexer.next() {
+                Some(Err(LexerError::UnclosedBlockComment { span, .. })) => {
+                    assert_eq!(span, (4..6).into())
+                }
+                _ => panic!("Expected `LexerError::UnclosedBlockComment`"),
+            }
+        }
+
+        #[test]
+        fn unclosed_string() {
+            let src = "let x = \"hello there;";
+            let mut lexer = Lexer::new(src);
+
+            assert_token!(lexer, Let, "let", 0);
+            assert_token!(lexer, Identifier, "x", 4);
+            assert_token!(lexer, Equal, "=", 6);
+
+            match lexer.next() {
+                Some(Err(LexerError::UnclosedString { span, .. })) => {
+                    assert_eq!(span, (8..9).into())
+                }
+                _ => panic!("Expected `LexerError::UnclosedString`"),
+            }
+        }
+    }
 }
