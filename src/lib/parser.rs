@@ -112,41 +112,41 @@ impl std::fmt::Display for ParserError {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Statement<'de> {
+pub enum Stmt<'iso> {
     Assignment {
-        name: Identifier<'de>,
-        value: Expr<'de>,
+        name: Identifier<'iso>,
+        value: Expr<'iso>,
     },
     Break,
-    Expr(Expr<'de>),
+    Expr(Expr<'iso>),
     FunctionDeclaration {
-        name: Identifier<'de>,
-        params: Vec<Identifier<'de>>,
-        body: Vec<Statement<'de>>,
+        name: Identifier<'iso>,
+        params: Vec<Identifier<'iso>>,
+        body: Vec<Stmt<'iso>>,
     },
     If {
-        condition: Expr<'de>,
-        body: Vec<Statement<'de>>,
-        else_body: Option<Vec<Statement<'de>>>,
+        condition: Expr<'iso>,
+        body: Vec<Stmt<'iso>>,
+        else_body: Option<Vec<Stmt<'iso>>>,
     },
     LetDeclaration {
-        name: Identifier<'de>,
-        value: Expr<'de>,
+        name: Identifier<'iso>,
+        value: Expr<'iso>,
     },
     Loop {
-        body: Vec<Statement<'de>>,
+        body: Vec<Stmt<'iso>>,
     },
     Nop,
-    Return(Expr<'de>),
+    Return(Expr<'iso>),
 }
 
-impl<'de> Display for Statement<'de> {
+impl Display for Stmt<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Statement::Assignment { name, value } => write!(f, "{} = {};", name, value),
-            Statement::Break => write!(f, "break;"),
-            Statement::Expr(expr) => write!(f, "{}", expr),
-            Statement::FunctionDeclaration { name, params, body } => {
+            Stmt::Assignment { name, value } => write!(f, "{} = {};", name, value),
+            Stmt::Break => write!(f, "break;"),
+            Stmt::Expr(expr) => write!(f, "{}", expr),
+            Stmt::FunctionDeclaration { name, params, body } => {
                 write!(f, "fn {}(", name)?;
                 for (i, param) in params.iter().enumerate() {
                     write!(f, "{}", param)?;
@@ -160,7 +160,7 @@ impl<'de> Display for Statement<'de> {
                 }
                 write!(f, "}}")
             }
-            Statement::If {
+            Stmt::If {
                 condition,
                 body,
                 else_body,
@@ -179,38 +179,38 @@ impl<'de> Display for Statement<'de> {
                 }
                 Ok(())
             }
-            Statement::LetDeclaration { name, value } => write!(f, "let {} = {};", name, value),
-            Statement::Loop { body } => {
+            Stmt::LetDeclaration { name, value } => write!(f, "let {} = {};", name, value),
+            Stmt::Loop { body } => {
                 write!(f, "loop {{ ")?;
                 for statement in body {
                     write!(f, "{} ", statement)?;
                 }
                 write!(f, "}}")
             }
-            Statement::Nop => write!(f, "nop;"),
-            Statement::Return(expr) => write!(f, "return {};", expr),
+            Stmt::Nop => write!(f, "nop;"),
+            Stmt::Return(expr) => write!(f, "return {};", expr),
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Identifier<'de> {
-    name: &'de str,
+pub struct Identifier<'iso> {
+    name: &'iso str,
 }
 
-impl<'de> Display for Identifier<'de> {
+impl Display for Identifier<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.name)
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Expr<'de> {
-    Atom(Atom<'de>),
-    Cons(Op, Vec<Expr<'de>>),
+pub enum Expr<'iso> {
+    Atom(Atom<'iso>),
+    Cons(Op, Vec<Expr<'iso>>),
 }
 
-impl<'de> Display for Expr<'de> {
+impl Display for Expr<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Expr::Atom(Atom::Boolean(b)) => write!(f, "{}", b),
@@ -241,11 +241,11 @@ impl<'de> Display for Expr<'de> {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Atom<'de> {
+pub enum Atom<'iso> {
     Boolean(bool),
-    Identifier(&'de str),
+    Identifier(&'iso str),
     Number(f64),
-    String(&'de str),
+    String(&'iso str),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -297,22 +297,22 @@ impl Display for Op {
     }
 }
 
-pub struct Parser<'de> {
-    source: &'de str,
-    lexer: Peekable<Lexer<'de>>,
+pub struct Parser<'iso> {
+    src: &'iso str,
+    lexer: Peekable<Lexer<'iso>>,
 }
 
-impl<'de> Parser<'de> {
-    pub fn new(file_contents: &'de str) -> Self {
+impl<'iso> Parser<'iso> {
+    pub fn new(file_contents: &'iso str) -> Self {
         Self {
-            source: file_contents,
+            src: file_contents,
             lexer: Lexer::new(file_contents).peekable(),
         }
     }
 }
 
-impl<'de> Iterator for Parser<'de> {
-    type Item = Result<Statement<'de>, ParserError>;
+impl<'iso> Iterator for Parser<'iso> {
+    type Item = Result<Stmt<'iso>, ParserError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.lexer.peek()?;
@@ -320,8 +320,8 @@ impl<'de> Iterator for Parser<'de> {
     }
 }
 
-impl<'de> Parser<'de> {
-    fn expect_token(&mut self, expected: TokenKind) -> Result<Token<'de>, ParserError> {
+impl<'iso> Parser<'iso> {
+    fn expect_token(&mut self, expected: TokenKind) -> Result<Token<'iso>, ParserError> {
         match self.lexer.next() {
             Some(Ok(token @ Token { kind, .. })) => {
                 if kind == expected {
@@ -329,19 +329,19 @@ impl<'de> Parser<'de> {
                 }
 
                 Err(ParserError::ExpectedToken {
-                    src: self.source.to_string(),
+                    src: self.src.to_string(),
                     span: token.span().into(),
                     expected: format!("{}", expected),
                 })
             }
             Some(Err(e)) => Err(e.into()),
             None => Err(ParserError::UnexpectedEOF {
-                src: self.source.to_string(),
+                src: self.src.to_string(),
             }),
         }
     }
 
-    fn parse_block(&mut self) -> Result<Vec<Statement<'de>>, ParserError> {
+    fn parse_block(&mut self) -> Result<Vec<Stmt<'iso>>, ParserError> {
         let left_curly = self.expect_token(TokenKind::LeftCurly)?;
         let mut statements = vec![];
 
@@ -356,7 +356,7 @@ impl<'de> Parser<'de> {
                 Some(Err(e)) => return Err(e.into()),
                 None => {
                     return Err(ParserError::UnclosedBlock {
-                        src: self.source.to_string(),
+                        src: self.src.to_string(),
                         span: left_curly.span().into(),
                     });
                 }
@@ -365,21 +365,21 @@ impl<'de> Parser<'de> {
         }
         self.expect_token(TokenKind::RightCurly)
             .map_err(|_| ParserError::UnclosedBlock {
-                src: self.source.to_string(),
+                src: self.src.to_string(),
                 span: (left_curly.span()).into(),
             })?;
 
         Ok(statements)
     }
 
-    fn parse_statement(&mut self) -> Result<Statement<'de>, ParserError> {
+    fn parse_statement(&mut self) -> Result<Stmt<'iso>, ParserError> {
         match self.lexer.peek().expect("peek already checked") {
             Ok(Token {
                 kind: TokenKind::Semicolon,
                 ..
             }) => {
                 self.lexer.next();
-                Ok(Statement::Nop)
+                Ok(Stmt::Nop)
             }
             Ok(Token {
                 kind: TokenKind::LeftCurly,
@@ -393,7 +393,7 @@ impl<'de> Parser<'de> {
             }) => {
                 self.lexer.next();
                 self.expect_token(TokenKind::Semicolon)?;
-                Ok(Statement::Break)
+                Ok(Stmt::Break)
             }
             Ok(Token {
                 kind: TokenKind::Function,
@@ -403,7 +403,7 @@ impl<'de> Parser<'de> {
                 let name = self.parse_identifier()?;
                 let params = self.parse_param_list()?;
                 let body = self.parse_block()?;
-                Ok(Statement::FunctionDeclaration { name, params, body })
+                Ok(Stmt::FunctionDeclaration { name, params, body })
             }
             Ok(Token {
                 kind: TokenKind::Identifier,
@@ -414,7 +414,7 @@ impl<'de> Parser<'de> {
                 self.expect_token(TokenKind::Equal)?;
                 let value = self.parse_expr()?;
                 self.expect_token(TokenKind::Semicolon)?;
-                Ok(Statement::Assignment { name, value })
+                Ok(Stmt::Assignment { name, value })
             }
             Ok(Token {
                 kind: TokenKind::If,
@@ -436,7 +436,7 @@ impl<'de> Parser<'de> {
                         .expect("Checked on peek")
                         .expect("Checked on peek")
                 } else {
-                    return Ok(Statement::If {
+                    return Ok(Stmt::If {
                         condition,
                         body,
                         else_body: None,
@@ -447,7 +447,7 @@ impl<'de> Parser<'de> {
                     Some(Ok(Token {
                         kind: TokenKind::If,
                         ..
-                    })) => Ok(Statement::If {
+                    })) => Ok(Stmt::If {
                         condition,
                         body,
                         else_body: Some(vec![self.parse_statement()?]),
@@ -455,14 +455,14 @@ impl<'de> Parser<'de> {
                     Some(Ok(Token {
                         kind: TokenKind::LeftCurly,
                         ..
-                    })) => Ok(Statement::If {
+                    })) => Ok(Stmt::If {
                         condition,
                         body,
                         else_body: Some(self.parse_block()?),
                     }),
                     Some(Err(e)) => Err(e.into()),
                     _ => Err(ParserError::InvalidElseStatement {
-                        src: self.source.to_string(),
+                        src: self.src.to_string(),
                         span: else_token.span().into(),
                     }),
                 }
@@ -476,7 +476,7 @@ impl<'de> Parser<'de> {
                 self.expect_token(TokenKind::Equal)?;
                 let value = self.parse_expr()?;
                 self.expect_token(TokenKind::Semicolon)?;
-                Ok(Statement::LetDeclaration { name, value })
+                Ok(Stmt::LetDeclaration { name, value })
             }
             Ok(Token {
                 kind: TokenKind::Loop,
@@ -484,7 +484,7 @@ impl<'de> Parser<'de> {
             }) => {
                 self.lexer.next();
                 let body = self.parse_block()?;
-                Ok(Statement::Loop { body })
+                Ok(Stmt::Loop { body })
             }
             Ok(Token {
                 kind: TokenKind::Return,
@@ -493,7 +493,7 @@ impl<'de> Parser<'de> {
                 self.lexer.next();
                 let expr = self.parse_expr()?;
                 self.expect_token(TokenKind::Semicolon)?;
-                Ok(Statement::Return(expr))
+                Ok(Stmt::Return(expr))
             }
             Ok(Token {
                 kind: TokenKind::Else,
@@ -501,12 +501,12 @@ impl<'de> Parser<'de> {
             }) => {
                 todo!("Invalid start of statement")
             }
-            Ok(_) => self.parse_expr().map(Statement::Expr),
+            Ok(_) => self.parse_expr().map(Stmt::Expr),
             Err(e) => Err(e.into()),
         }
     }
 
-    fn parse_param_list(&mut self) -> Result<Vec<Identifier<'de>>, ParserError> {
+    fn parse_param_list(&mut self) -> Result<Vec<Identifier<'iso>>, ParserError> {
         let left_paren = self.expect_token(TokenKind::LeftParen)?;
         let mut last = left_paren.clone();
 
@@ -518,7 +518,7 @@ impl<'de> Parser<'de> {
                 Some(Err(e)) => return Err(e.into()),
                 None => {
                     return Err(ParserError::UnclosedParamList {
-                        src: self.source.to_string(),
+                        src: self.src.to_string(),
                         span: (left_paren.offset..last.span().end).into(),
                     })
                 }
@@ -559,7 +559,7 @@ impl<'de> Parser<'de> {
                         Some(Err(e)) => return Err(e.into()),
                         _ => {
                             return Err(ParserError::UnclosedParamList {
-                                src: self.source.to_string(),
+                                src: self.src.to_string(),
                                 span: (left_paren.offset..last.span().end).into(),
                             })
                         }
@@ -567,7 +567,7 @@ impl<'de> Parser<'de> {
                 }
                 _ => {
                     return Err(ParserError::UnclosedParamList {
-                        src: self.source.to_string(),
+                        src: self.src.to_string(),
                         span: (left_paren.offset..last.span().end).into(),
                     });
                 }
@@ -575,14 +575,14 @@ impl<'de> Parser<'de> {
         }
         self.expect_token(TokenKind::RightParen)
             .map_err(|_| ParserError::UnclosedParamList {
-                src: self.source.to_string(),
+                src: self.src.to_string(),
                 span: (left_paren.offset..last.span().end).into(),
             })?;
 
         Ok(params)
     }
 
-    fn parse_identifier(&mut self) -> Result<Identifier<'de>, ParserError> {
+    fn parse_identifier(&mut self) -> Result<Identifier<'iso>, ParserError> {
         match self.lexer.next() {
             Some(Ok(Token {
                 kind: TokenKind::Identifier,
@@ -590,12 +590,12 @@ impl<'de> Parser<'de> {
                 ..
             })) => Ok(Identifier { name: orig }),
             Some(Ok(Token { orig, offset, .. })) => Err(ParserError::ExpectedIdentifier {
-                src: self.source.to_string(),
+                src: self.src.to_string(),
                 span: (offset..offset + orig.len()).into(),
             }),
             Some(Err(e)) => Err(e.into()),
             None => Err(ParserError::UnexpectedEOF {
-                src: self.source.to_string(),
+                src: self.src.to_string(),
             }),
         }
     }
@@ -608,8 +608,8 @@ impl<'de> Parser<'de> {
         &mut self,
         sep: TokenKind,
         end: TokenKind,
-    ) -> Result<Vec<Expr<'de>>, ParserError> {
-        let mut params: Vec<Expr<'de>> = vec![];
+    ) -> Result<Vec<Expr<'iso>>, ParserError> {
+        let mut params: Vec<Expr<'iso>> = vec![];
 
         loop {
             match self.lexer.peek() {
@@ -627,17 +627,17 @@ impl<'de> Parser<'de> {
         Ok(params)
     }
 
-    fn parse_expr(&mut self) -> Result<Expr<'de>, ParserError> {
+    fn parse_expr(&mut self) -> Result<Expr<'iso>, ParserError> {
         if self.lexer.peek().is_none() {
             return Err(ParserError::UnexpectedEOF {
-                src: self.source.to_string(),
+                src: self.src.to_string(),
             });
         }
 
         self.parse_expr_within(0) // TODO: wrap with ExpectedExpression
     }
 
-    fn parse_expr_within(&mut self, min_bp: u8) -> Result<Expr<'de>, ParserError> {
+    fn parse_expr_within(&mut self, min_bp: u8) -> Result<Expr<'iso>, ParserError> {
         let mut lhs = match self.lexer.next() {
             // literals
             Some(Ok(Token {
@@ -659,7 +659,7 @@ impl<'de> Parser<'de> {
                 let num = orig
                     .parse::<f64>()
                     .map_err(|e| ParserError::ParseFloatError {
-                        src: self.source.to_string(),
+                        src: self.src.to_string(),
                         span: token.span().into(),
                         error: e,
                     })?;
@@ -727,12 +727,12 @@ impl<'de> Parser<'de> {
             Some(Err(e)) => return Err(e.into()),
             None => {
                 return Err(ParserError::UnexpectedEOF {
-                    src: self.source.to_string(),
+                    src: self.src.to_string(),
                 });
             }
             Some(Ok(token)) => {
                 return Err(ParserError::ExpectedExpression {
-                    src: self.source.to_string(),
+                    src: self.src.to_string(),
                     span: token.span().into(),
                 });
             }
@@ -797,7 +797,7 @@ impl<'de> Parser<'de> {
                     _ => {
                         // NOTE: should not be reachable due to `postfix_binding_power` returning None
                         return Err(ParserError::InvalidPostfixOperator {
-                            src: self.source.to_string(),
+                            src: self.src.to_string(),
                             span: op_token.span().into(),
                         });
                     }
@@ -869,7 +869,7 @@ mod tests {
         let mut parser = Parser::new(";;;");
 
         match parser.next() {
-            Some(Ok(Statement::Nop)) => {}
+            Some(Ok(Stmt::Nop)) => {}
             _ => panic!("Expected `Statement::Nop`"),
         };
     }
@@ -879,7 +879,7 @@ mod tests {
         let mut parser = Parser::new("let x = 1;");
 
         match parser.next() {
-            Some(Ok(Statement::LetDeclaration { name, value })) => {
+            Some(Ok(Stmt::LetDeclaration { name, value })) => {
                 assert_eq!(name.name, "x");
                 assert_eq!(format!("{}", value), "1");
             }
@@ -892,7 +892,7 @@ mod tests {
         let mut parser = Parser::new("x = 1;");
 
         match parser.next() {
-            Some(Ok(Statement::Assignment { name, value })) => {
+            Some(Ok(Stmt::Assignment { name, value })) => {
                 assert_eq!(name.name, "x");
                 assert_eq!(format!("{}", value), "1");
             }
@@ -905,7 +905,7 @@ mod tests {
         let mut parser = Parser::new("return 1;");
 
         match parser.next() {
-            Some(Ok(Statement::Return(expr))) => {
+            Some(Ok(Stmt::Return(expr))) => {
                 assert_eq!(format!("{}", expr), "1");
             }
             _ => panic!("Expected `Statement::Return`"),
@@ -917,7 +917,7 @@ mod tests {
         let mut parser = Parser::new("break;");
 
         match parser.next() {
-            Some(Ok(Statement::Break)) => {}
+            Some(Ok(Stmt::Break)) => {}
             _ => panic!("Expected `Statement::Break`"),
         };
     }
@@ -927,7 +927,7 @@ mod tests {
         let mut parser = Parser::new("loop { let x = 1; break; }");
 
         match parser.next() {
-            Some(Ok(Statement::Loop { body })) => {
+            Some(Ok(Stmt::Loop { body })) => {
                 assert_eq!(body.len(), 2);
                 assert_eq!(format!("{}", body[0]), "let x = 1;");
                 assert_eq!(format!("{}", body[1]), "break;");
@@ -941,7 +941,7 @@ mod tests {
         let mut parser = Parser::new("if(true) { let x = 1; }");
 
         match parser.next() {
-            Some(Ok(Statement::If {
+            Some(Ok(Stmt::If {
                 condition,
                 body,
                 else_body,
@@ -960,7 +960,7 @@ mod tests {
         let mut parser = Parser::new("if(true) { let x = 1; } else { let x = 2; }");
 
         match parser.next() {
-            Some(Ok(Statement::If {
+            Some(Ok(Stmt::If {
                 condition,
                 body,
                 else_body,
@@ -984,7 +984,7 @@ mod tests {
         let mut parser = Parser::new("if(true) { let x = 1; } else if(false) { let x = 2; }");
 
         match parser.next() {
-            Some(Ok(Statement::If {
+            Some(Ok(Stmt::If {
                 condition,
                 body,
                 else_body,
