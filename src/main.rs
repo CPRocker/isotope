@@ -66,7 +66,8 @@ fn main() -> Result<()> {
 }
 
 fn lex(file_contents: &str) -> Result<()> {
-    let lexer = isotope::lexer::Lexer::new(file_contents);
+    let mut src = std::io::Cursor::new(file_contents);
+    let lexer = isotope::lexer::Lexer::new(&mut src);
 
     for token in lexer {
         let token = token?;

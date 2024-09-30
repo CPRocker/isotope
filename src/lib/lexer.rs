@@ -3,58 +3,43 @@ use std::fmt::Display;
 use miette::{Diagnostic, Result, SourceSpan};
 use thiserror::Error;
 
+mod reader;
+
 #[derive(Error, Diagnostic, Debug, Clone, PartialEq)]
 pub enum LexerError {
+    #[error("Unexpected token: `{found}`")]
     UnexpectedToken {
-        #[source_code]
-        src: String,
+        found: String,
 
         #[label = "here"]
         span: SourceSpan,
     },
+    #[error("Unclosed block comment")]
     UnclosedBlockComment {
-        #[source_code]
-        src: String,
-
         #[label = "opened here"]
         span: SourceSpan,
     },
+    #[error("Unclosed string literal")]
     UnclosedString {
-        #[source_code]
-        src: String,
-
         #[label = "opened here"]
         span: SourceSpan,
     },
-}
-
-impl std::fmt::Display for LexerError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            LexerError::UnexpectedToken { src, span } => {
-                let token = &src[span.offset()..span.offset() + span.len()];
-                write!(f, "Unexpected token: `{}`", token)
-            }
-            LexerError::UnclosedBlockComment { .. } => write!(f, "Unclosed block comment"),
-            LexerError::UnclosedString { .. } => write!(f, "Unclosed string literal"),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Token<'iso> {
+pub struct Token {
     pub kind: TokenKind,
-    pub orig: &'iso str,
+    pub orig: String,
     pub offset: usize,
 }
 
-impl Token<'_> {
+impl Token {
     pub fn span(&self) -> std::ops::Range<usize> {
         self.offset..self.offset + self.orig.len()
     }
 }
 
-impl Display for Token<'_> {
+impl Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.kind {
             TokenKind::Bang
@@ -177,39 +162,25 @@ impl Display for TokenKind {
     }
 }
 
-pub struct Lexer<'iso> {
-    src: &'iso str,
-    rest: &'iso str,
-    offset: usize,
+pub struct Lexer<'iso, R>
+where
+    R: std::io::BufRead,
+{
+    reader: reader::CharReader<'iso, R>,
 }
 
-impl<'iso> Lexer<'iso> {
-    pub fn new(file_contents: &'iso str) -> Self {
+impl<'iso, R> Lexer<'iso, R>
+where
+    R: std::io::BufRead,
+{
+    pub fn new(src: &'iso mut R) -> Self {
         Self {
-            src: file_contents,
-            rest: file_contents,
-            offset: 0,
+            reader: reader::CharReader::new(src),
         }
     }
 
-    fn trim(&mut self) {
-        let before_trim = self.rest.len();
-        self.rest = self.rest.trim_start();
-        self.offset += before_trim - self.rest.len();
-    }
-
-    fn peek(&self) -> Option<char> {
-        self.rest.chars().next()
-    }
-
-    fn consume(&mut self) -> Option<char> {
-        self.trim();
-
-        let c = self.rest.chars().next()?;
-        self.rest = &self.rest[c.len_utf8()..];
-        self.offset += c.len_utf8();
-
-        Some(c)
+    fn skip_read_while(&mut self, predicate: impl Fn(&char) -> bool) {
+        self.reader.skip_read_while(predicate)
     }
 }
 
@@ -225,26 +196,25 @@ enum Started {
     String,
 }
 
-impl<'iso> Iterator for Lexer<'iso> {
-    type Item = Result<Token<'iso>, LexerError>;
+impl<'iso, R> Iterator for Lexer<'iso, R>
+where
+    R: std::io::BufRead,
+{
+    type Item = Result<Token, LexerError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.trim();
-        match self.peek() {
-            Some(_) => {}
-            None => return None,
-        }
+        self.skip_read_while(|c| c.is_whitespace());
 
-        let c_onwards = self.rest;
-        let c_at = self.offset;
-        let c = self.consume().expect("Already checked for empty");
+        let offset = self.reader.offset();
+        let c = self.reader.next()?;
+        let mut orig = c.to_string();
 
         macro_rules! single_char_token {
             ($kind:ident) => {
                 Some(Ok(Token {
                     kind: TokenKind::$kind,
-                    orig: &self.src[c_at..self.offset],
-                    offset: c_at,
+                    orig,
+                    offset,
                 }))
             };
         }
@@ -274,26 +244,26 @@ impl<'iso> Iterator for Lexer<'iso> {
             '"' => Started::String,
             _ => {
                 return Some(Err(LexerError::UnexpectedToken {
-                    src: self.src.to_string(),
-                    span: (c_at..self.offset).into(),
+                    found: c.to_string(),
+                    span: (offset..offset + orig.len()).into(),
                 }))
             }
         };
 
         macro_rules! with_eq_or {
             ($if:ident, $else:ident) => {
-                if let Some('=') = self.peek() {
-                    self.consume();
+                if let Some('=') = self.reader.peek() {
+                    orig.push(self.reader.next().expect("already peeked"));
                     Some(Ok(Token {
                         kind: TokenKind::$if,
-                        orig: self.src[c_at..self.offset].into(),
-                        offset: c_at,
+                        orig,
+                        offset,
                     }))
                 } else {
                     Some(Ok(Token {
                         kind: TokenKind::$else,
-                        orig: self.src[c_at..self.offset].into(),
-                        offset: c_at,
+                        orig,
+                        offset,
                     }))
                 }
             };
@@ -304,24 +274,25 @@ impl<'iso> Iterator for Lexer<'iso> {
             Started::Eq => with_eq_or!(EqualEqual, Equal),
             Started::Greater => with_eq_or!(GreaterEqual, Greater),
             Started::Identifier => {
-                let id = c_onwards
-                    .split_once(|d| !matches!(d, 'a'..='z' | 'A'..='Z' | '_' | '0'..='9'))
-                    .map_or(c_onwards, |(id, _)| id);
-
-                self.rest = &c_onwards[id.len()..];
-                self.offset = c_at + id.len();
+                while let Some(c) = self.reader.peek() {
+                    if matches!(c, 'a'..='z' | 'A'..='Z' | '_' | '0'..='9') {
+                        orig.push(self.reader.next().expect("already peeked"));
+                    } else {
+                        break;
+                    }
+                }
 
                 macro_rules! identifier {
                     ($kind:ident) => {
                         Some(Ok(Token {
                             kind: TokenKind::$kind,
-                            orig: id,
-                            offset: c_at,
+                            orig,
+                            offset,
                         }))
                     };
                 }
 
-                match id {
+                match orig.as_str() {
                     "break" => identifier!(Break),
                     "else" => identifier!(Else),
                     "false" => identifier!(False),
@@ -336,78 +307,84 @@ impl<'iso> Iterator for Lexer<'iso> {
             }
             Started::Less => with_eq_or!(LessEqual, Less),
             Started::Number => {
-                let mut num = c_onwards
-                    .split_once(|d| !matches!(d, '0'..='9' | '.'))
-                    .map_or(c_onwards, |(num, _)| num);
-                let parts: Vec<&str> = num.split('.').collect();
-
-                match parts.len() {
-                    1 => {
-                        // int
-                        let s = parts[0];
-                        num = &c_onwards[..s.len()];
+                let mut first_decimal = true;
+                while let Some(c) = self.reader.peek() {
+                    match c {
+                        '0'..='9' => {
+                            orig.push(self.reader.next().expect("already peeked"));
+                        }
+                        '.' if first_decimal => {
+                            orig.push(self.reader.next().expect("already peeked"));
+                            first_decimal = false;
+                        }
+                        '.' => break,
+                        _ => break,
                     }
-                    2.. => {
-                        // float
-                        let s = parts[0..=1].join(".");
-                        num = &c_onwards[..s.len()];
-                    }
-                    _ => unreachable!("Must be a number from match above"),
-                };
-
-                self.rest = &c_onwards[num.len()..];
-                self.offset = c_at + num.len();
+                }
 
                 Some(Ok(Token {
                     kind: TokenKind::Number,
-                    orig: &self.src[c_at..self.offset],
-                    offset: c_at,
+                    orig,
+                    offset,
                 }))
             }
-            Started::Slash => match self.peek() {
+            Started::Slash => match self.reader.peek() {
                 Some('/') => {
                     // this is a single line comment
-                    self.consume();
+                    self.reader.next();
 
-                    if let Some((comment, rest)) = self.rest.split_once('\n') {
-                        self.rest = rest;
-                        self.offset += comment.len() + '\n'.len_utf8();
-                        return self.next();
-                    }
+                    self.skip_read_while(|&c| c != '\n');
+                    self.reader.next();
 
-                    None
+                    self.next()
                 }
                 Some('*') => {
                     /* this is a block comment */
-                    self.consume();
+                    orig.push(self.reader.next().expect("already peeked"));
 
-                    if let Some((comment, rest)) = self.rest.split_once("*/") {
-                        self.rest = rest;
-                        self.offset += comment.len() + "*/".len();
-                        return self.next();
+                    loop {
+                        self.skip_read_while(|&c| c != '*');
+                        self.reader.next();
+
+                        match self.reader.peek() {
+                            Some('/') => {
+                                self.reader.next();
+                                return self.next();
+                            }
+                            None => {
+                                return Some(Err(LexerError::UnclosedBlockComment {
+                                    span: (offset..offset + orig.len()).into(),
+                                }));
+                            }
+                            _ => continue,
+                        }
                     }
-
-                    Some(Err(LexerError::UnclosedBlockComment {
-                        src: self.src.to_string(),
-                        span: (c_at..self.offset).into(),
-                    }))
                 }
                 _ => single_char_token!(Slash),
             },
             Started::String => {
-                if let Some((literal, rest)) = self.rest.split_once('"') {
-                    self.rest = rest;
-                    self.offset += literal.len() + '"'.len_utf8();
-                    return Some(Ok(Token {
-                        kind: TokenKind::String,
-                        orig: &self.src[c_at..self.offset],
-                        offset: c_at,
-                    }));
+                loop {
+                    match self.reader.peek() {
+                        Some(_) => {
+                            let c = self.reader.next().expect("already peeked");
+                            orig.push(c);
+
+                            if c == '"' {
+                                break;
+                            }
+                        }
+                        None => {
+                            return Some(Err(LexerError::UnclosedString {
+                                span: (offset..offset + orig.len()).into(),
+                            }));
+                        }
+                    }
                 }
 
-                Some(Err(LexerError::UnclosedString {
-                    src: self.src.to_string(),
-                    span: (c_at..self.offset).into(),
+                Some(Ok(Token {
+                    kind: TokenKind::String,
+                    orig,
+                    offset,
                 }))
             }
         }
@@ -416,70 +393,89 @@ impl<'iso> Iterator for Lexer<'iso> {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Cursor;
+
     use super::TokenKind::*;
     use super::*;
 
     macro_rules! assert_token {
         ($lexer:ident, $kind:ident, $orig:literal, $offset:literal) => {
-            if let Some(Ok(Token {
-                kind: TokenKind::$kind,
-                orig,
-                offset,
-            })) = $lexer.next()
-            {
-                assert_eq!(orig, $orig);
-                assert_eq!(offset, $offset);
-            } else {
-                panic!("Expected a {} token", $kind);
+            match $lexer.next() {
+                Some(Ok(Token {
+                    kind: TokenKind::$kind,
+                    orig,
+                    offset,
+                })) => {
+                    assert_eq!(
+                        orig, $orig,
+                        "{} at {}, expected orig: {}",
+                        $kind, offset, $orig
+                    );
+                    assert_eq!(
+                        offset, $offset,
+                        "{} at {}, expected offset: {}",
+                        $kind, offset, $offset
+                    );
+                }
+                Some(Ok(token)) => {
+                    panic!("Expected {} at {}, got {:?}", $kind, $offset, token)
+                }
+                Some(Err(e)) => panic!("Expected {} at {}, got error: {}", $kind, $offset, e),
+                None => panic!("Expected {} at {}", $kind, $offset),
             }
         };
     }
 
     #[test]
     fn eof() {
-        let src = "";
-        let mut lexer = Lexer::new(src);
+        let code = "";
+        let mut src = Cursor::new(code);
+        let mut lexer = Lexer::new(&mut src);
 
         assert!(lexer.next().is_none());
     }
 
     #[test]
     fn whitespace() {
-        let src = "  \t\n\r";
-        let mut lexer = Lexer::new(src);
+        let code = "  \t\n\r";
+        let mut src = Cursor::new(code);
+        let mut lexer = Lexer::new(&mut src);
 
         assert!(lexer.next().is_none());
     }
 
     #[test]
     fn single_line_comments() {
-        let src = r#"
+        let code = r#"
         // this is a single line comment
         // this is a second line comment
         ;
         "#;
-        let mut lexer = Lexer::new(src);
+        let mut src = Cursor::new(code);
+        let mut lexer = Lexer::new(&mut src);
 
         assert_token!(lexer, Semicolon, ";", 91);
     }
 
     #[test]
     fn block_comments() {
-        let src = r#"
+        let code = r#"
         /*
             this is a block comment
         */
         ;
         "#;
-        let mut lexer = Lexer::new(src);
+        let mut src = Cursor::new(code);
+        let mut lexer = Lexer::new(&mut src);
 
         assert_token!(lexer, Semicolon, ";", 67);
     }
 
     #[test]
     fn parens_brackets_curlys() {
-        let src = "( ) [ ] { }";
-        let mut lexer = Lexer::new(src);
+        let code = "( ) [ ] { }";
+        let mut src = Cursor::new(code);
+        let mut lexer = Lexer::new(&mut src);
 
         assert_token!(lexer, LeftParen, "(", 0);
         assert_token!(lexer, RightParen, ")", 2);
@@ -490,8 +486,9 @@ mod tests {
 
     #[test]
     fn keywords() {
-        let src = "let return fn if else loop break true false";
-        let mut lexer = Lexer::new(src);
+        let code = "let return fn if else loop break true false";
+        let mut src = Cursor::new(code);
+        let mut lexer = Lexer::new(&mut src);
 
         assert_token!(lexer, Let, "let", 0);
         assert_token!(lexer, Return, "return", 4);
@@ -506,8 +503,9 @@ mod tests {
 
     #[test]
     fn numbers() {
-        let src = "123 123.456 123.456.789";
-        let mut lexer = Lexer::new(src);
+        let code = "123 123.456 123.456.789";
+        let mut src = Cursor::new(code);
+        let mut lexer = Lexer::new(&mut src);
 
         assert_token!(lexer, Number, "123", 0);
         assert_token!(lexer, Number, "123.456", 4);
@@ -518,8 +516,9 @@ mod tests {
 
     #[test]
     fn identifiers() {
-        let src = "foo bar baz";
-        let mut lexer = Lexer::new(src);
+        let code = "foo bar baz";
+        let mut src = Cursor::new(code);
+        let mut lexer = Lexer::new(&mut src);
 
         assert_token!(lexer, Identifier, "foo", 0);
         assert_token!(lexer, Identifier, "bar", 4);
@@ -528,10 +527,11 @@ mod tests {
 
     #[test]
     fn strings() {
-        let src = r#""foo" "bar" "b
+        let code = r#""foo" "bar" "b
         a
         z""#;
-        let mut lexer = Lexer::new(src);
+        let mut src = Cursor::new(code);
+        let mut lexer = Lexer::new(&mut src);
 
         assert_token!(lexer, String, "\"foo\"", 0);
         assert_token!(lexer, String, "\"bar\"", 6);
@@ -540,8 +540,9 @@ mod tests {
 
     #[test]
     fn operators() {
-        let src = "+ - * / % ^";
-        let mut lexer = Lexer::new(src);
+        let code = "+ - * / % ^";
+        let mut src = Cursor::new(code);
+        let mut lexer = Lexer::new(&mut src);
 
         assert_token!(lexer, Plus, "+", 0);
         assert_token!(lexer, Minus, "-", 2);
@@ -553,8 +554,9 @@ mod tests {
 
     #[test]
     fn comparison_operators() {
-        let src = "= == === ! != !!= > >= >>= < <= <<=";
-        let mut lexer = Lexer::new(src);
+        let code = "= == === ! != !!= > >= >>= < <= <<=";
+        let mut src = Cursor::new(code);
+        let mut lexer = Lexer::new(&mut src);
 
         assert_token!(lexer, Equal, "=", 0);
         assert_token!(lexer, EqualEqual, "==", 2);
@@ -578,8 +580,9 @@ mod tests {
         use super::*;
         #[test]
         fn unexpected_token() {
-            let src = "let $ = 1;";
-            let mut lexer = Lexer::new(src);
+            let code = "let $ = 1;";
+            let mut src = Cursor::new(code);
+            let mut lexer = Lexer::new(&mut src);
 
             assert_token!(lexer, Let, "let", 0);
 
@@ -593,8 +596,9 @@ mod tests {
 
         #[test]
         fn unclosed_block_comment() {
-            let src = "let /* testing  = 1;";
-            let mut lexer = Lexer::new(src);
+            let code = "let /* testing  = 1;";
+            let mut src = Cursor::new(code);
+            let mut lexer = Lexer::new(&mut src);
 
             assert_token!(lexer, Let, "let", 0);
 
@@ -608,8 +612,9 @@ mod tests {
 
         #[test]
         fn unclosed_string() {
-            let src = "let x = \"hello there;";
-            let mut lexer = Lexer::new(src);
+            let code = "let x = \"hello there;";
+            let mut src = Cursor::new(code);
+            let mut lexer = Lexer::new(&mut src);
 
             assert_token!(lexer, Let, "let", 0);
             assert_token!(lexer, Identifier, "x", 4);
@@ -617,7 +622,7 @@ mod tests {
 
             match lexer.next() {
                 Some(Err(LexerError::UnclosedString { span, .. })) => {
-                    assert_eq!(span, (8..9).into())
+                    assert_eq!(span, (8..21).into())
                 }
                 _ => panic!("Expected `LexerError::UnclosedString`"),
             }
