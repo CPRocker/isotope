@@ -1,318 +1,40 @@
-use std::{fmt::Display, iter::Peekable};
+use miette::Result;
 
-use miette::{Diagnostic, Result, SourceSpan};
-use thiserror::Error;
+use crate::lexer::{Lexer, Token, TokenKind};
 
-use crate::lexer::{Lexer, LexerError, Token, TokenKind};
+mod error;
+mod expression;
+mod statement;
 
-#[derive(Error, Diagnostic, Debug, Clone, PartialEq)]
-pub enum ParserError {
-    #[error(transparent)]
-    LexerError(
-        #[from]
-        #[diagnostic_source]
-        LexerError,
-    ),
-    ParseFloatError {
-        #[source_code]
-        src: String,
-        #[label = "here"]
-        span: SourceSpan,
-        #[source]
-        error: std::num::ParseFloatError,
-    },
-    UnexpectedEOF {
-        #[source_code]
-        src: String,
-    },
-    ExpectedToken {
-        #[source_code]
-        src: String,
-        #[label = "here"]
-        span: SourceSpan,
-        expected: String,
-    },
-    ExpectedExpression {
-        #[source_code]
-        src: String,
-        #[label = "here"]
-        span: SourceSpan,
-    },
-    ExpectedIdentifier {
-        #[source_code]
-        src: String,
-        #[label = "here"]
-        span: SourceSpan,
-    },
-    InvalidElseStatement {
-        #[source_code]
-        src: String,
-        #[label = "here"]
-        span: SourceSpan,
-    },
-    InvalidPostfixOperator {
-        #[source_code]
-        src: String,
-        #[label = "here"]
-        span: SourceSpan,
-    },
-    #[diagnostic(help("Did you forget to add a right parenthesis?"))]
-    UnclosedParamList {
-        #[source_code]
-        src: String,
-        #[label = "here"]
-        span: SourceSpan,
-    },
-    UnclosedBlock {
-        #[source_code]
-        src: String,
-        #[label = "here"]
-        span: SourceSpan,
-    },
+pub use error::ParserError;
+pub use expression::Atom;
+pub use expression::Expr;
+pub use expression::Op;
+pub use statement::Stmt;
+
+pub struct Parser<'iso, R>
+where
+    R: std::io::BufRead,
+{
+    lexer: std::iter::Peekable<Lexer<'iso, R>>,
 }
 
-impl From<&LexerError> for ParserError {
-    fn from(err: &LexerError) -> ParserError {
-        ParserError::LexerError(err.to_owned())
-    }
-}
-
-impl std::fmt::Display for ParserError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ParserError::LexerError { .. } => write!(f, "Lexer error"),
-            ParserError::ParseFloatError { .. } => {
-                write!(f, "Failed to parse floating point number")
-            }
-            ParserError::UnexpectedEOF { .. } => write!(f, "Unexpected EOF"),
-            ParserError::ExpectedToken {
-                src,
-                span,
-                expected,
-            } => {
-                let found = &src[span.offset()..span.offset() + span.len()];
-                write!(f, "Expected `{}` but found `{}`", expected, found)
-            }
-            ParserError::ExpectedExpression { .. } => write!(f, "Expected expression"),
-            ParserError::ExpectedIdentifier { .. } => write!(f, "Expected identifier"),
-            ParserError::InvalidElseStatement { .. } => {
-                write!(
-                    f,
-                    "Invalid else statement: expected `else if` or `else` block"
-                )
-            }
-            ParserError::InvalidPostfixOperator { src, span } => {
-                let token = &src[span.offset()..span.offset() + span.len()];
-                write!(f, "Invalid postfix operator: `{}`", token)
-            }
-            ParserError::UnclosedParamList { .. } => write!(f, "Unclosed parameter list"),
-            ParserError::UnclosedBlock { .. } => write!(f, "Unclosed block"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Stmt<'iso> {
-    Assignment {
-        name: Identifier<'iso>,
-        value: Expr<'iso>,
-    },
-    Break,
-    Expr(Expr<'iso>),
-    FunctionDeclaration {
-        name: Identifier<'iso>,
-        params: Vec<Identifier<'iso>>,
-        body: Vec<Stmt<'iso>>,
-    },
-    If {
-        condition: Expr<'iso>,
-        body: Vec<Stmt<'iso>>,
-        else_body: Option<Vec<Stmt<'iso>>>,
-    },
-    LetDeclaration {
-        name: Identifier<'iso>,
-        value: Expr<'iso>,
-    },
-    Loop {
-        body: Vec<Stmt<'iso>>,
-    },
-    Nop,
-    Return(Expr<'iso>),
-}
-
-impl Display for Stmt<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Stmt::Assignment { name, value } => write!(f, "{} = {};", name, value),
-            Stmt::Break => write!(f, "break;"),
-            Stmt::Expr(expr) => write!(f, "{}", expr),
-            Stmt::FunctionDeclaration { name, params, body } => {
-                write!(f, "fn {}(", name)?;
-                for (i, param) in params.iter().enumerate() {
-                    write!(f, "{}", param)?;
-                    if i < params.len() - 1 {
-                        write!(f, ", ")?;
-                    }
-                }
-                write!(f, ") {{ ")?;
-                for statement in body {
-                    write!(f, "{} ", statement)?;
-                }
-                write!(f, "}}")
-            }
-            Stmt::If {
-                condition,
-                body,
-                else_body,
-            } => {
-                write!(f, "if({}) {{ ", condition)?;
-                for statement in body {
-                    write!(f, "{} ", statement)?;
-                }
-                write!(f, "}}")?;
-                if let Some(else_body) = else_body {
-                    write!(f, " else {{ ")?;
-                    for statement in else_body {
-                        write!(f, "{} ", statement)?;
-                    }
-                    write!(f, "}}")?;
-                }
-                Ok(())
-            }
-            Stmt::LetDeclaration { name, value } => write!(f, "let {} = {};", name, value),
-            Stmt::Loop { body } => {
-                write!(f, "loop {{ ")?;
-                for statement in body {
-                    write!(f, "{} ", statement)?;
-                }
-                write!(f, "}}")
-            }
-            Stmt::Nop => write!(f, "nop;"),
-            Stmt::Return(expr) => write!(f, "return {};", expr),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Identifier<'iso> {
-    name: &'iso str,
-}
-
-impl Display for Identifier<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.name)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Expr<'iso> {
-    Atom(Atom<'iso>),
-    Cons(Op, Vec<Expr<'iso>>),
-}
-
-impl Display for Expr<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Expr::Atom(Atom::Boolean(b)) => write!(f, "{}", b),
-            Expr::Atom(Atom::Identifier(s)) => write!(f, "{}", s),
-            Expr::Atom(Atom::Number(n)) => write!(f, "{}", n),
-            Expr::Atom(Atom::String(s)) => write!(f, "\"{}\"", s),
-            Expr::Cons(op, args) if op == &Op::Call => {
-                for (i, arg) in args.iter().enumerate() {
-                    if i == 0 {
-                        write!(f, "({}(", arg)?;
-                    } else if i == 1 {
-                        write!(f, "{}", arg)?;
-                    } else {
-                        write!(f, ", {}", arg)?;
-                    }
-                }
-                write!(f, "))")
-            }
-            Expr::Cons(op, args) => {
-                write!(f, "({}", op)?;
-                for arg in args {
-                    write!(f, " {}", arg)?;
-                }
-                write!(f, ")")
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Atom<'iso> {
-    Boolean(bool),
-    Identifier(&'iso str),
-    Number(f64),
-    String(&'iso str),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Op {
-    Add,
-    Assign,
-    Call,
-    Div,
-    Eq,
-    Field,
-    Gt,
-    Gte,
-    Index,
-    Lt,
-    Lte,
-    Mod,
-    Mul,
-    Neg,
-    Neq,
-    Not,
-    Pos,
-    Pow,
-    Sub,
-}
-
-impl Display for Op {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Op::Add => write!(f, "+"),
-            Op::Assign => write!(f, "="),
-            Op::Call => write!(f, "()"),
-            Op::Div => write!(f, "/"),
-            Op::Eq => write!(f, "=="),
-            Op::Field => write!(f, "."),
-            Op::Gt => write!(f, ">"),
-            Op::Gte => write!(f, ">="),
-            Op::Index => write!(f, "[]"),
-            Op::Lt => write!(f, "<"),
-            Op::Lte => write!(f, "<="),
-            Op::Mod => write!(f, "%"),
-            Op::Mul => write!(f, "*"),
-            Op::Neg => write!(f, "-"),
-            Op::Neq => write!(f, "!="),
-            Op::Not => write!(f, "!"),
-            Op::Pos => write!(f, "+"),
-            Op::Pow => write!(f, "^"),
-            Op::Sub => write!(f, "-"),
-        }
-    }
-}
-
-pub struct Parser<'iso> {
-    src: &'iso str,
-    lexer: Peekable<Lexer<'iso>>,
-}
-
-impl<'iso> Parser<'iso> {
-    pub fn new(file_contents: &'iso str) -> Self {
+impl<'iso, R> Parser<'iso, R>
+where
+    R: std::io::BufRead,
+{
+    pub fn new(src: &'iso mut R) -> Self {
         Self {
-            src: file_contents,
-            lexer: Lexer::new(file_contents).peekable(),
+            lexer: Lexer::new(src).peekable(),
         }
     }
 }
 
-impl<'iso> Iterator for Parser<'iso> {
-    type Item = Result<Stmt<'iso>, ParserError>;
+impl<'iso, R> Iterator for Parser<'iso, R>
+where
+    R: std::io::BufRead,
+{
+    type Item = Result<Stmt, ParserError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.lexer.peek()?;
@@ -320,28 +42,24 @@ impl<'iso> Iterator for Parser<'iso> {
     }
 }
 
-impl<'iso> Parser<'iso> {
-    fn expect_token(&mut self, expected: TokenKind) -> Result<Token<'iso>, ParserError> {
+impl<'iso, R> Parser<'iso, R>
+where
+    R: std::io::BufRead,
+{
+    fn expect_token(&mut self, expected: TokenKind) -> Result<Token, ParserError> {
         match self.lexer.next() {
-            Some(Ok(token @ Token { kind, .. })) => {
-                if kind == expected {
-                    return Ok(token);
-                }
-
-                Err(ParserError::ExpectedToken {
-                    src: self.src.to_string(),
-                    span: token.span().into(),
-                    expected: format!("{}", expected),
-                })
-            }
-            Some(Err(e)) => Err(e.into()),
-            None => Err(ParserError::UnexpectedEOF {
-                src: self.src.to_string(),
+            Some(Ok(token)) if token.kind == expected => Ok(token),
+            Some(Ok(token)) => Err(ParserError::ExpectedToken {
+                expected: expected.to_string(),
+                found: token.kind.to_string(),
+                span: token.span().into(),
             }),
+            Some(Err(e)) => Err(e.into()),
+            None => Err(ParserError::UnexpectedEOF),
         }
     }
 
-    fn parse_block(&mut self) -> Result<Vec<Stmt<'iso>>, ParserError> {
+    fn parse_block(&mut self) -> Result<Vec<Stmt>, ParserError> {
         let left_curly = self.expect_token(TokenKind::LeftCurly)?;
         let mut statements = vec![];
 
@@ -356,7 +74,6 @@ impl<'iso> Parser<'iso> {
                 Some(Err(e)) => return Err(e.into()),
                 None => {
                     return Err(ParserError::UnclosedBlock {
-                        src: self.src.to_string(),
                         span: left_curly.span().into(),
                     });
                 }
@@ -365,14 +82,13 @@ impl<'iso> Parser<'iso> {
         }
         self.expect_token(TokenKind::RightCurly)
             .map_err(|_| ParserError::UnclosedBlock {
-                src: self.src.to_string(),
                 span: (left_curly.span()).into(),
             })?;
 
         Ok(statements)
     }
 
-    fn parse_statement(&mut self) -> Result<Stmt<'iso>, ParserError> {
+    fn parse_statement(&mut self) -> Result<Stmt, ParserError> {
         match self.lexer.peek().expect("peek already checked") {
             Ok(Token {
                 kind: TokenKind::Semicolon,
@@ -385,6 +101,7 @@ impl<'iso> Parser<'iso> {
                 kind: TokenKind::LeftCurly,
                 ..
             }) => {
+                // TODO: support scoped blocks
                 todo!()
             }
             Ok(Token {
@@ -462,7 +179,6 @@ impl<'iso> Parser<'iso> {
                     }),
                     Some(Err(e)) => Err(e.into()),
                     _ => Err(ParserError::InvalidElseStatement {
-                        src: self.src.to_string(),
                         span: else_token.span().into(),
                     }),
                 }
@@ -506,7 +222,7 @@ impl<'iso> Parser<'iso> {
         }
     }
 
-    fn parse_param_list(&mut self) -> Result<Vec<Identifier<'iso>>, ParserError> {
+    fn parse_param_list(&mut self) -> Result<Vec<statement::Identifier>, ParserError> {
         let left_paren = self.expect_token(TokenKind::LeftParen)?;
         let mut last = left_paren.clone();
 
@@ -518,7 +234,6 @@ impl<'iso> Parser<'iso> {
                 Some(Err(e)) => return Err(e.into()),
                 None => {
                     return Err(ParserError::UnclosedParamList {
-                        src: self.src.to_string(),
                         span: (left_paren.offset..last.span().end).into(),
                     })
                 }
@@ -539,7 +254,7 @@ impl<'iso> Parser<'iso> {
                         .next()
                         .expect("Checked on peek")
                         .expect("Checked on peek");
-                    params.push(Identifier { name: orig });
+                    params.push(statement::Identifier::new(orig));
 
                     match self.lexer.peek() {
                         Some(Ok(Token {
@@ -559,7 +274,6 @@ impl<'iso> Parser<'iso> {
                         Some(Err(e)) => return Err(e.into()),
                         _ => {
                             return Err(ParserError::UnclosedParamList {
-                                src: self.src.to_string(),
                                 span: (left_paren.offset..last.span().end).into(),
                             })
                         }
@@ -567,7 +281,6 @@ impl<'iso> Parser<'iso> {
                 }
                 _ => {
                     return Err(ParserError::UnclosedParamList {
-                        src: self.src.to_string(),
                         span: (left_paren.offset..last.span().end).into(),
                     });
                 }
@@ -575,28 +288,24 @@ impl<'iso> Parser<'iso> {
         }
         self.expect_token(TokenKind::RightParen)
             .map_err(|_| ParserError::UnclosedParamList {
-                src: self.src.to_string(),
                 span: (left_paren.offset..last.span().end).into(),
             })?;
 
         Ok(params)
     }
 
-    fn parse_identifier(&mut self) -> Result<Identifier<'iso>, ParserError> {
+    fn parse_identifier(&mut self) -> Result<statement::Identifier, ParserError> {
         match self.lexer.next() {
             Some(Ok(Token {
                 kind: TokenKind::Identifier,
                 orig,
                 ..
-            })) => Ok(Identifier { name: orig }),
+            })) => Ok(statement::Identifier::new(orig)),
             Some(Ok(Token { orig, offset, .. })) => Err(ParserError::ExpectedIdentifier {
-                src: self.src.to_string(),
                 span: (offset..offset + orig.len()).into(),
             }),
             Some(Err(e)) => Err(e.into()),
-            None => Err(ParserError::UnexpectedEOF {
-                src: self.src.to_string(),
-            }),
+            None => Err(ParserError::UnexpectedEOF),
         }
     }
 
@@ -608,8 +317,8 @@ impl<'iso> Parser<'iso> {
         &mut self,
         sep: TokenKind,
         end: TokenKind,
-    ) -> Result<Vec<Expr<'iso>>, ParserError> {
-        let mut params: Vec<Expr<'iso>> = vec![];
+    ) -> Result<Vec<Expr>, ParserError> {
+        let mut params: Vec<Expr> = vec![];
 
         loop {
             match self.lexer.peek() {
@@ -627,17 +336,15 @@ impl<'iso> Parser<'iso> {
         Ok(params)
     }
 
-    fn parse_expr(&mut self) -> Result<Expr<'iso>, ParserError> {
+    fn parse_expr(&mut self) -> Result<Expr, ParserError> {
         if self.lexer.peek().is_none() {
-            return Err(ParserError::UnexpectedEOF {
-                src: self.src.to_string(),
-            });
+            return Err(ParserError::UnexpectedEOF);
         }
 
         self.parse_expr_within(0) // TODO: wrap with ExpectedExpression
     }
 
-    fn parse_expr_within(&mut self, min_bp: u8) -> Result<Expr<'iso>, ParserError> {
+    fn parse_expr_within(&mut self, min_bp: u8) -> Result<Expr, ParserError> {
         let mut lhs = match self.lexer.next() {
             // literals
             Some(Ok(Token {
@@ -649,17 +356,11 @@ impl<'iso> Parser<'iso> {
                 orig,
                 ..
             })) => Expr::Atom(Atom::Identifier(orig)),
-            Some(Ok(
-                token @ Token {
-                    kind: TokenKind::Number,
-                    orig,
-                    ..
-                },
-            )) => {
-                let num = orig
+            Some(Ok(token)) if token.kind == TokenKind::Number => {
+                let num = token
+                    .orig
                     .parse::<f64>()
                     .map_err(|e| ParserError::ParseFloatError {
-                        src: self.src.to_string(),
                         span: token.span().into(),
                         error: e,
                     })?;
@@ -675,7 +376,7 @@ impl<'iso> Parser<'iso> {
                 let mut chars = orig.chars();
                 chars.next();
                 chars.next_back();
-                let s = chars.as_str();
+                let s = chars.as_str().to_owned();
                 // TODO: escape sequences
 
                 Expr::Atom(Atom::String(s))
@@ -724,17 +425,14 @@ impl<'iso> Parser<'iso> {
                 Expr::Cons(op, vec![rhs])
             }
             // errors
-            Some(Err(e)) => return Err(e.into()),
-            None => {
-                return Err(ParserError::UnexpectedEOF {
-                    src: self.src.to_string(),
-                });
-            }
             Some(Ok(token)) => {
                 return Err(ParserError::ExpectedExpression {
-                    src: self.src.to_string(),
                     span: token.span().into(),
                 });
+            }
+            Some(Err(e)) => return Err(e.into()),
+            None => {
+                return Err(ParserError::UnexpectedEOF);
             }
         };
 
@@ -797,7 +495,7 @@ impl<'iso> Parser<'iso> {
                     _ => {
                         // NOTE: should not be reachable due to `postfix_binding_power` returning None
                         return Err(ParserError::InvalidPostfixOperator {
-                            src: self.src.to_string(),
+                            op: op.to_string(),
                             span: op_token.span().into(),
                         });
                     }
@@ -855,18 +553,24 @@ impl<'iso> Parser<'iso> {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Cursor;
+
     use super::*;
 
     #[test]
     fn eof() {
-        let mut parser = Parser::new("");
+        let code = "";
+        let mut src = Cursor::new(code);
+        let mut parser = Parser::new(&mut src);
 
         assert!(parser.next().is_none());
     }
 
     #[test]
     fn nop() {
-        let mut parser = Parser::new(";;;");
+        let code = ";;;";
+        let mut src = Cursor::new(code);
+        let mut parser = Parser::new(&mut src);
 
         match parser.next() {
             Some(Ok(Stmt::Nop)) => {}
@@ -876,11 +580,13 @@ mod tests {
 
     #[test]
     fn let_statement() {
-        let mut parser = Parser::new("let x = 1;");
+        let code = "let x = 1;";
+        let mut src = Cursor::new(code);
+        let mut parser = Parser::new(&mut src);
 
         match parser.next() {
             Some(Ok(Stmt::LetDeclaration { name, value })) => {
-                assert_eq!(name.name, "x");
+                assert_eq!(name.name(), "x");
                 assert_eq!(format!("{}", value), "1");
             }
             _ => panic!("Expected `Statement::Let`"),
@@ -889,11 +595,13 @@ mod tests {
 
     #[test]
     fn assignment_statement() {
-        let mut parser = Parser::new("x = 1;");
+        let code = "x = 1;";
+        let mut src = Cursor::new(code);
+        let mut parser = Parser::new(&mut src);
 
         match parser.next() {
             Some(Ok(Stmt::Assignment { name, value })) => {
-                assert_eq!(name.name, "x");
+                assert_eq!(name.name(), "x");
                 assert_eq!(format!("{}", value), "1");
             }
             _ => panic!("Expected `Statement::Assignment`"),
@@ -902,7 +610,9 @@ mod tests {
 
     #[test]
     fn return_statement() {
-        let mut parser = Parser::new("return 1;");
+        let code = "return 1;";
+        let mut src = Cursor::new(code);
+        let mut parser = Parser::new(&mut src);
 
         match parser.next() {
             Some(Ok(Stmt::Return(expr))) => {
@@ -914,7 +624,9 @@ mod tests {
 
     #[test]
     fn break_statement() {
-        let mut parser = Parser::new("break;");
+        let code = "break;";
+        let mut src = Cursor::new(code);
+        let mut parser = Parser::new(&mut src);
 
         match parser.next() {
             Some(Ok(Stmt::Break)) => {}
@@ -924,7 +636,9 @@ mod tests {
 
     #[test]
     fn loop_statement() {
-        let mut parser = Parser::new("loop { let x = 1; break; }");
+        let code = "loop { let x = 1; break; }";
+        let mut src = Cursor::new(code);
+        let mut parser = Parser::new(&mut src);
 
         match parser.next() {
             Some(Ok(Stmt::Loop { body })) => {
@@ -938,7 +652,9 @@ mod tests {
 
     #[test]
     fn if_statement() {
-        let mut parser = Parser::new("if(true) { let x = 1; }");
+        let code = "if(true) { let x = 1; }";
+        let mut src = Cursor::new(code);
+        let mut parser = Parser::new(&mut src);
 
         match parser.next() {
             Some(Ok(Stmt::If {
@@ -957,7 +673,9 @@ mod tests {
 
     #[test]
     fn if_else_statement() {
-        let mut parser = Parser::new("if(true) { let x = 1; } else { let x = 2; }");
+        let code = "if(true) { let x = 1; } else { let x = 2; }";
+        let mut src = Cursor::new(code);
+        let mut parser = Parser::new(&mut src);
 
         match parser.next() {
             Some(Ok(Stmt::If {
@@ -981,7 +699,9 @@ mod tests {
 
     #[test]
     fn if_else_if_statement() {
-        let mut parser = Parser::new("if(true) { let x = 1; } else if(false) { let x = 2; }");
+        let code = "if(true) { let x = 1; } else if(false) { let x = 2; }";
+        let mut src = Cursor::new(code);
+        let mut parser = Parser::new(&mut src);
 
         match parser.next() {
             Some(Ok(Stmt::If {
@@ -1008,7 +728,9 @@ mod tests {
 
         #[test]
         fn function_call() {
-            let mut parser = Parser::new("foo(1, 2, 3)");
+            let code = "foo(1, 2, 3)";
+            let mut src = Cursor::new(code);
+            let mut parser = Parser::new(&mut src);
 
             if let Ok(expr) = parser.parse_expr() {
                 assert_eq!(format!("{}", expr), "(foo(1, 2, 3))");
@@ -1019,7 +741,9 @@ mod tests {
 
         #[test]
         fn indexing() {
-            let mut parser = Parser::new("foo[0]");
+            let code = "foo[0]";
+            let mut src = Cursor::new(code);
+            let mut parser = Parser::new(&mut src);
 
             if let Ok(expr) = parser.parse_expr() {
                 assert_eq!(format!("{}", expr), "([] foo 0)");
@@ -1030,7 +754,9 @@ mod tests {
 
         #[test]
         fn prefix_op_precedence() {
-            let mut parser = Parser::new("-1 + 2");
+            let code = "-1 + 2";
+            let mut src = Cursor::new(code);
+            let mut parser = Parser::new(&mut src);
 
             if let Ok(expr) = parser.parse_expr() {
                 assert_eq!(format!("{}", expr), "(+ (- 1) 2)");
@@ -1041,7 +767,9 @@ mod tests {
 
         #[test]
         fn additive_infix_op_precedence() {
-            let mut parser = Parser::new("1 + 2 - 3");
+            let code = "1 + 2 - 3";
+            let mut src = Cursor::new(code);
+            let mut parser = Parser::new(&mut src);
 
             if let Ok(expr) = parser.parse_expr() {
                 assert_eq!(format!("{}", expr), "(- (+ 1 2) 3)");
@@ -1052,7 +780,9 @@ mod tests {
 
         #[test]
         fn infix_op_precedence() {
-            let mut parser = Parser::new("0 + 1 * 2 - 3 / 4");
+            let code = "0 + 1 * 2 - 3 / 4";
+            let mut src = Cursor::new(code);
+            let mut parser = Parser::new(&mut src);
 
             if let Ok(expr) = parser.parse_expr() {
                 assert_eq!(format!("{}", expr), "(- (+ 0 (* 1 2)) (/ 3 4))");
@@ -1063,7 +793,9 @@ mod tests {
 
         #[test]
         fn infix_postfix_op_precedence() {
-            let mut parser = Parser::new("1 + foo[0] - 3");
+            let code = "1 + foo[0] - 3";
+            let mut src = Cursor::new(code);
+            let mut parser = Parser::new(&mut src);
 
             if let Ok(expr) = parser.parse_expr() {
                 assert_eq!(format!("{}", expr), "(- (+ 1 ([] foo 0)) 3)");
@@ -1074,7 +806,9 @@ mod tests {
 
         #[test]
         fn postfix_op_precedence() {
-            let mut parser = Parser::new("foo(1, 2, 3)[0]");
+            let code = "foo(1, 2, 3)[0]";
+            let mut src = Cursor::new(code);
+            let mut parser = Parser::new(&mut src);
 
             if let Ok(expr) = parser.parse_expr() {
                 assert_eq!(format!("{}", expr), "([] (foo(1, 2, 3)) 0)");
@@ -1089,8 +823,9 @@ mod tests {
 
         #[test]
         fn unclosed_block() {
-            let src = "fn foo() { let x = 1;";
-            let mut parser = Parser::new(src);
+            let code = "fn foo() { let x = 1;";
+            let mut src = Cursor::new(code);
+            let mut parser = Parser::new(&mut src);
 
             match parser.next() {
                 Some(Err(ParserError::UnclosedBlock { span, .. })) => {
@@ -1102,8 +837,9 @@ mod tests {
 
         #[test]
         fn unclosed_param_list() {
-            let src = "fn foo(x, y { let x = 1;";
-            let mut parser = Parser::new(src);
+            let code = "fn foo(x, y { let x = 1;";
+            let mut src = Cursor::new(code);
+            let mut parser = Parser::new(&mut src);
 
             match parser.next() {
                 Some(Err(ParserError::UnclosedParamList { span, .. })) => {
@@ -1115,8 +851,9 @@ mod tests {
 
         #[test]
         fn let_without_identifier() {
-            let src = "let = 1;";
-            let mut parser = Parser::new(src);
+            let code = "let = 1;";
+            let mut src = Cursor::new(code);
+            let mut parser = Parser::new(&mut src);
 
             match parser.next() {
                 Some(Err(ParserError::ExpectedIdentifier { span, .. })) => {
@@ -1128,8 +865,9 @@ mod tests {
 
         #[test]
         fn let_without_expression() {
-            let src = "let x = ;";
-            let mut parser = Parser::new(src);
+            let code = "let x = ;";
+            let mut src = Cursor::new(code);
+            let mut parser = Parser::new(&mut src);
 
             match parser.next() {
                 Some(Err(ParserError::ExpectedExpression { span, .. })) => {
