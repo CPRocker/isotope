@@ -1,5 +1,5 @@
 use clap::{Parser, ValueEnum};
-use miette::{Diagnostic, Result};
+use miette::{Diagnostic, IntoDiagnostic, Result};
 use thiserror::Error;
 
 use std::fs;
@@ -54,20 +54,22 @@ fn main() -> Result<()> {
         .into());
     }
 
-    let file_contents = fs::read_to_string(&args.file_path)
-        .map_err(|source| CliError::FileReadError { file_path, source })?;
+    let file = fs::File::open(file_path).into_diagnostic()?;
+    let mut reader = std::io::BufReader::new(file);
+
+    let stdout = std::io::stdout();
+    let stdout = stdout.lock();
 
     match args.command {
-        Command::Lex => lex(&file_contents),
-        Command::Parse => parse(&file_contents),
-        Command::Generate => generate(&file_contents),
-        Command::Compile => compile(&file_contents),
+        Command::Lex => lex(&mut reader),
+        Command::Parse => parse(&mut reader),
+        Command::Generate => generate(&mut reader, stdout),
+        Command::Compile => compile(&mut reader, stdout),
     }
 }
 
-fn lex(file_contents: &str) -> Result<()> {
-    let mut src = std::io::Cursor::new(file_contents);
-    let lexer = isotope::lexer::Lexer::new(&mut src);
+fn lex<R: std::io::BufRead>(src: &mut R) -> Result<()> {
+    let lexer = isotope::lexer::Lexer::new(src);
 
     for token in lexer {
         let token = token?;
@@ -77,8 +79,8 @@ fn lex(file_contents: &str) -> Result<()> {
     Ok(())
 }
 
-fn parse(file_contents: &str) -> Result<()> {
-    let parser = isotope::parser::Parser::new(file_contents);
+fn parse<R: std::io::BufRead>(src: &mut R) -> Result<()> {
+    let parser = isotope::parser::Parser::new(src);
 
     for statement in parser {
         let statement = statement?;
@@ -88,16 +90,22 @@ fn parse(file_contents: &str) -> Result<()> {
     Ok(())
 }
 
-fn generate(file_contents: &str) -> Result<()> {
-    let _generator = isotope::generator::Generator::new(file_contents);
+fn generate<R: std::io::BufRead, W: std::io::Write>(src: &mut R, out: W) -> Result<()> {
+    // TODO: make out configurable
+    let mut generator = isotope::generator::Generator::new(src, out);
 
-    todo!()
+    generator.generate()?;
+
+    Ok(())
 }
 
-fn compile(file_contents: &str) -> Result<()> {
-    let _compiler = isotope::compiler::Compiler::new(file_contents);
+fn compile<R: std::io::BufRead, W: std::io::Write>(src: &mut R, out: W) -> Result<()> {
+    // TODO: decide on compiler backend based on machine
+    let mut compiler = isotope::compiler::Compiler::new(src, out);
 
-    todo!()
+    compiler.compile()?;
+
+    Ok(())
 }
 
 // fn run() -> Result<(), lib::error::Error> {
