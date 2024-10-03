@@ -8,21 +8,17 @@ pub use error::LexerError;
 pub use token::Token;
 pub use token::TokenKind;
 
-pub struct Lexer<'iso, R>
-where
-    R: std::io::BufRead,
-{
-    reader: reader::CharReader<'iso, R>,
+use crate::source::Source;
+
+pub struct Lexer<'iso> {
+    reader: reader::CharReader<'iso>,
 }
 
-impl<'iso, R> Lexer<'iso, R>
-where
-    R: std::io::BufRead,
-{
-    pub fn new(src: &'iso mut R) -> Self {
-        Self {
-            reader: reader::CharReader::new(src),
-        }
+impl<'iso> Lexer<'iso> {
+    pub fn new(src: &'iso Source) -> Result<Self, LexerError> {
+        Ok(Self {
+            reader: reader::CharReader::new(src).map_err(LexerError::from)?,
+        })
     }
 
     fn skip_read_while(&mut self, predicate: impl Fn(&char) -> bool) {
@@ -42,10 +38,7 @@ enum Started {
     String,
 }
 
-impl<'iso, R> Iterator for Lexer<'iso, R>
-where
-    R: std::io::BufRead,
-{
+impl<'iso> Iterator for Lexer<'iso> {
     type Item = Result<Token, LexerError>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -239,7 +232,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
+    use std::str::FromStr;
 
     use super::TokenKind::*;
     use super::*;
@@ -275,8 +268,8 @@ mod tests {
     #[test]
     fn eof() {
         let code = "";
-        let mut src = Cursor::new(code);
-        let mut lexer = Lexer::new(&mut src);
+        let src = Source::from_str(code).expect("code is valid UTF-8");
+        let mut lexer = Lexer::new(&src).expect("failed to create lexer");
 
         assert!(lexer.next().is_none());
     }
@@ -284,8 +277,8 @@ mod tests {
     #[test]
     fn whitespace() {
         let code = "  \t\n\r";
-        let mut src = Cursor::new(code);
-        let mut lexer = Lexer::new(&mut src);
+        let src = Source::from_str(code).expect("code is valid UTF-8");
+        let mut lexer = Lexer::new(&src).expect("failed to create lexer");
 
         assert!(lexer.next().is_none());
     }
@@ -297,8 +290,8 @@ mod tests {
         // this is a second line comment
         ;
         "#;
-        let mut src = Cursor::new(code);
-        let mut lexer = Lexer::new(&mut src);
+        let src = Source::from_str(code).expect("code is valid UTF-8");
+        let mut lexer = Lexer::new(&src).expect("failed to create lexer");
 
         assert_token!(lexer, Semicolon, ";", 91);
     }
@@ -311,8 +304,8 @@ mod tests {
         */
         ;
         "#;
-        let mut src = Cursor::new(code);
-        let mut lexer = Lexer::new(&mut src);
+        let src = Source::from_str(code).expect("code is valid UTF-8");
+        let mut lexer = Lexer::new(&src).expect("failed to create lexer");
 
         assert_token!(lexer, Semicolon, ";", 67);
     }
@@ -320,8 +313,8 @@ mod tests {
     #[test]
     fn parens_brackets_curlys() {
         let code = "( ) [ ] { }";
-        let mut src = Cursor::new(code);
-        let mut lexer = Lexer::new(&mut src);
+        let src = Source::from_str(code).expect("code is valid UTF-8");
+        let mut lexer = Lexer::new(&src).expect("failed to create lexer");
 
         assert_token!(lexer, LeftParen, "(", 0);
         assert_token!(lexer, RightParen, ")", 2);
@@ -333,8 +326,8 @@ mod tests {
     #[test]
     fn keywords() {
         let code = "let return fn if else loop break true false";
-        let mut src = Cursor::new(code);
-        let mut lexer = Lexer::new(&mut src);
+        let src = Source::from_str(code).expect("code is valid UTF-8");
+        let mut lexer = Lexer::new(&src).expect("failed to create lexer");
 
         assert_token!(lexer, Let, "let", 0);
         assert_token!(lexer, Return, "return", 4);
@@ -350,8 +343,8 @@ mod tests {
     #[test]
     fn numbers() {
         let code = "123 123.456 123.456.789";
-        let mut src = Cursor::new(code);
-        let mut lexer = Lexer::new(&mut src);
+        let src = Source::from_str(code).expect("code is valid UTF-8");
+        let mut lexer = Lexer::new(&src).expect("failed to create lexer");
 
         assert_token!(lexer, Number, "123", 0);
         assert_token!(lexer, Number, "123.456", 4);
@@ -363,8 +356,8 @@ mod tests {
     #[test]
     fn identifiers() {
         let code = "foo bar baz";
-        let mut src = Cursor::new(code);
-        let mut lexer = Lexer::new(&mut src);
+        let src = Source::from_str(code).expect("code is valid UTF-8");
+        let mut lexer = Lexer::new(&src).expect("failed to create lexer");
 
         assert_token!(lexer, Identifier, "foo", 0);
         assert_token!(lexer, Identifier, "bar", 4);
@@ -376,8 +369,8 @@ mod tests {
         let code = r#""foo" "bar" "b
         a
         z""#;
-        let mut src = Cursor::new(code);
-        let mut lexer = Lexer::new(&mut src);
+        let src = Source::from_str(code).expect("code is valid UTF-8");
+        let mut lexer = Lexer::new(&src).expect("failed to create lexer");
 
         assert_token!(lexer, String, "\"foo\"", 0);
         assert_token!(lexer, String, "\"bar\"", 6);
@@ -387,8 +380,8 @@ mod tests {
     #[test]
     fn operators() {
         let code = "+ - * / % ^";
-        let mut src = Cursor::new(code);
-        let mut lexer = Lexer::new(&mut src);
+        let src = Source::from_str(code).expect("code is valid UTF-8");
+        let mut lexer = Lexer::new(&src).expect("failed to create lexer");
 
         assert_token!(lexer, Plus, "+", 0);
         assert_token!(lexer, Minus, "-", 2);
@@ -401,8 +394,8 @@ mod tests {
     #[test]
     fn comparison_operators() {
         let code = "= == === ! != !!= > >= >>= < <= <<=";
-        let mut src = Cursor::new(code);
-        let mut lexer = Lexer::new(&mut src);
+        let src = Source::from_str(code).expect("code is valid UTF-8");
+        let mut lexer = Lexer::new(&src).expect("failed to create lexer");
 
         assert_token!(lexer, Equal, "=", 0);
         assert_token!(lexer, EqualEqual, "==", 2);
@@ -427,8 +420,8 @@ mod tests {
         #[test]
         fn unexpected_token() {
             let code = "let $ = 1;";
-            let mut src = Cursor::new(code);
-            let mut lexer = Lexer::new(&mut src);
+            let src = Source::from_str(code).expect("code is valid UTF-8");
+            let mut lexer = Lexer::new(&src).expect("failed to create lexer");
 
             assert_token!(lexer, Let, "let", 0);
 
@@ -443,8 +436,8 @@ mod tests {
         #[test]
         fn unclosed_block_comment() {
             let code = "let /* testing  = 1;";
-            let mut src = Cursor::new(code);
-            let mut lexer = Lexer::new(&mut src);
+            let src = Source::from_str(code).expect("code is valid UTF-8");
+            let mut lexer = Lexer::new(&src).expect("failed to create lexer");
 
             assert_token!(lexer, Let, "let", 0);
 
@@ -459,8 +452,8 @@ mod tests {
         #[test]
         fn unclosed_string() {
             let code = "let x = \"hello there;";
-            let mut src = Cursor::new(code);
-            let mut lexer = Lexer::new(&mut src);
+            let src = Source::from_str(code).expect("code is valid UTF-8");
+            let mut lexer = Lexer::new(&src).expect("failed to create lexer");
 
             assert_token!(lexer, Let, "let", 0);
             assert_token!(lexer, Identifier, "x", 4);

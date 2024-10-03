@@ -1,6 +1,7 @@
 use miette::Result;
 
 use crate::lexer::{Lexer, Token, TokenKind};
+use crate::source::Source;
 
 mod error;
 mod expression;
@@ -12,28 +13,19 @@ pub use expression::Expr;
 pub use expression::Op;
 pub use statement::Stmt;
 
-pub struct Parser<'iso, R>
-where
-    R: std::io::BufRead,
-{
-    lexer: std::iter::Peekable<Lexer<'iso, R>>,
+pub struct Parser<'iso> {
+    lexer: std::iter::Peekable<Lexer<'iso>>,
 }
 
-impl<'iso, R> Parser<'iso, R>
-where
-    R: std::io::BufRead,
-{
-    pub fn new(src: &'iso mut R) -> Self {
-        Self {
-            lexer: Lexer::new(src).peekable(),
-        }
+impl<'iso> Parser<'iso> {
+    pub fn new(src: &'iso Source) -> Result<Self, ParserError> {
+        Ok(Self {
+            lexer: Lexer::new(src)?.peekable(),
+        })
     }
 }
 
-impl<'iso, R> Iterator for Parser<'iso, R>
-where
-    R: std::io::BufRead,
-{
+impl<'iso> Iterator for Parser<'iso> {
     type Item = Result<Stmt, ParserError>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -42,10 +34,7 @@ where
     }
 }
 
-impl<'iso, R> Parser<'iso, R>
-where
-    R: std::io::BufRead,
-{
+impl<'iso> Parser<'iso> {
     fn expect_token(&mut self, expected: TokenKind) -> Result<Token, ParserError> {
         match self.lexer.next() {
             Some(Ok(token)) if token.kind == expected => Ok(token),
@@ -553,15 +542,15 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
+    use std::str::FromStr;
 
     use super::*;
 
     #[test]
     fn eof() {
         let code = "";
-        let mut src = Cursor::new(code);
-        let mut parser = Parser::new(&mut src);
+        let src = Source::from_str(code).expect("code is valid UTF-8");
+        let mut parser = Parser::new(&src).expect("failed to create parser");
 
         assert!(parser.next().is_none());
     }
@@ -569,8 +558,8 @@ mod tests {
     #[test]
     fn nop() {
         let code = ";;;";
-        let mut src = Cursor::new(code);
-        let mut parser = Parser::new(&mut src);
+        let src = Source::from_str(code).expect("code is valid UTF-8");
+        let mut parser = Parser::new(&src).expect("failed to create parser");
 
         match parser.next() {
             Some(Ok(Stmt::Nop)) => {}
@@ -581,8 +570,8 @@ mod tests {
     #[test]
     fn let_statement() {
         let code = "let x = 1;";
-        let mut src = Cursor::new(code);
-        let mut parser = Parser::new(&mut src);
+        let src = Source::from_str(code).expect("code is valid UTF-8");
+        let mut parser = Parser::new(&src).expect("failed to create parser");
 
         match parser.next() {
             Some(Ok(Stmt::LetDeclaration { name, value })) => {
@@ -596,8 +585,8 @@ mod tests {
     #[test]
     fn assignment_statement() {
         let code = "x = 1;";
-        let mut src = Cursor::new(code);
-        let mut parser = Parser::new(&mut src);
+        let src = Source::from_str(code).expect("code is valid UTF-8");
+        let mut parser = Parser::new(&src).expect("failed to create parser");
 
         match parser.next() {
             Some(Ok(Stmt::Assignment { name, value })) => {
@@ -611,8 +600,8 @@ mod tests {
     #[test]
     fn return_statement() {
         let code = "return 1;";
-        let mut src = Cursor::new(code);
-        let mut parser = Parser::new(&mut src);
+        let src = Source::from_str(code).expect("code is valid UTF-8");
+        let mut parser = Parser::new(&src).expect("failed to create parser");
 
         match parser.next() {
             Some(Ok(Stmt::Return(expr))) => {
@@ -625,8 +614,8 @@ mod tests {
     #[test]
     fn break_statement() {
         let code = "break;";
-        let mut src = Cursor::new(code);
-        let mut parser = Parser::new(&mut src);
+        let src = Source::from_str(code).expect("code is valid UTF-8");
+        let mut parser = Parser::new(&src).expect("failed to create parser");
 
         match parser.next() {
             Some(Ok(Stmt::Break)) => {}
@@ -637,8 +626,8 @@ mod tests {
     #[test]
     fn loop_statement() {
         let code = "loop { let x = 1; break; }";
-        let mut src = Cursor::new(code);
-        let mut parser = Parser::new(&mut src);
+        let src = Source::from_str(code).expect("code is valid UTF-8");
+        let mut parser = Parser::new(&src).expect("failed to create parser");
 
         match parser.next() {
             Some(Ok(Stmt::Loop { body })) => {
@@ -653,8 +642,8 @@ mod tests {
     #[test]
     fn if_statement() {
         let code = "if(true) { let x = 1; }";
-        let mut src = Cursor::new(code);
-        let mut parser = Parser::new(&mut src);
+        let src = Source::from_str(code).expect("code is valid UTF-8");
+        let mut parser = Parser::new(&src).expect("failed to create parser");
 
         match parser.next() {
             Some(Ok(Stmt::If {
@@ -674,8 +663,8 @@ mod tests {
     #[test]
     fn if_else_statement() {
         let code = "if(true) { let x = 1; } else { let x = 2; }";
-        let mut src = Cursor::new(code);
-        let mut parser = Parser::new(&mut src);
+        let src = Source::from_str(code).expect("code is valid UTF-8");
+        let mut parser = Parser::new(&src).expect("failed to create parser");
 
         match parser.next() {
             Some(Ok(Stmt::If {
@@ -700,8 +689,8 @@ mod tests {
     #[test]
     fn if_else_if_statement() {
         let code = "if(true) { let x = 1; } else if(false) { let x = 2; }";
-        let mut src = Cursor::new(code);
-        let mut parser = Parser::new(&mut src);
+        let src = Source::from_str(code).expect("code is valid UTF-8");
+        let mut parser = Parser::new(&src).expect("failed to create parser");
 
         match parser.next() {
             Some(Ok(Stmt::If {
@@ -729,8 +718,8 @@ mod tests {
         #[test]
         fn function_call() {
             let code = "foo(1, 2, 3)";
-            let mut src = Cursor::new(code);
-            let mut parser = Parser::new(&mut src);
+            let src = Source::from_str(code).expect("code is valid UTF-8");
+            let mut parser = Parser::new(&src).expect("failed to create parser");
 
             if let Ok(expr) = parser.parse_expr() {
                 assert_eq!(format!("{}", expr), "(foo(1, 2, 3))");
@@ -742,8 +731,8 @@ mod tests {
         #[test]
         fn indexing() {
             let code = "foo[0]";
-            let mut src = Cursor::new(code);
-            let mut parser = Parser::new(&mut src);
+            let src = Source::from_str(code).expect("code is valid UTF-8");
+            let mut parser = Parser::new(&src).expect("failed to create parser");
 
             if let Ok(expr) = parser.parse_expr() {
                 assert_eq!(format!("{}", expr), "([] foo 0)");
@@ -755,8 +744,8 @@ mod tests {
         #[test]
         fn prefix_op_precedence() {
             let code = "-1 + 2";
-            let mut src = Cursor::new(code);
-            let mut parser = Parser::new(&mut src);
+            let src = Source::from_str(code).expect("code is valid UTF-8");
+            let mut parser = Parser::new(&src).expect("failed to create parser");
 
             if let Ok(expr) = parser.parse_expr() {
                 assert_eq!(format!("{}", expr), "(+ (- 1) 2)");
@@ -768,8 +757,8 @@ mod tests {
         #[test]
         fn additive_infix_op_precedence() {
             let code = "1 + 2 - 3";
-            let mut src = Cursor::new(code);
-            let mut parser = Parser::new(&mut src);
+            let src = Source::from_str(code).expect("code is valid UTF-8");
+            let mut parser = Parser::new(&src).expect("failed to create parser");
 
             if let Ok(expr) = parser.parse_expr() {
                 assert_eq!(format!("{}", expr), "(- (+ 1 2) 3)");
@@ -781,8 +770,8 @@ mod tests {
         #[test]
         fn infix_op_precedence() {
             let code = "0 + 1 * 2 - 3 / 4";
-            let mut src = Cursor::new(code);
-            let mut parser = Parser::new(&mut src);
+            let src = Source::from_str(code).expect("code is valid UTF-8");
+            let mut parser = Parser::new(&src).expect("failed to create parser");
 
             if let Ok(expr) = parser.parse_expr() {
                 assert_eq!(format!("{}", expr), "(- (+ 0 (* 1 2)) (/ 3 4))");
@@ -794,8 +783,8 @@ mod tests {
         #[test]
         fn infix_postfix_op_precedence() {
             let code = "1 + foo[0] - 3";
-            let mut src = Cursor::new(code);
-            let mut parser = Parser::new(&mut src);
+            let src = Source::from_str(code).expect("code is valid UTF-8");
+            let mut parser = Parser::new(&src).expect("failed to create parser");
 
             if let Ok(expr) = parser.parse_expr() {
                 assert_eq!(format!("{}", expr), "(- (+ 1 ([] foo 0)) 3)");
@@ -807,8 +796,8 @@ mod tests {
         #[test]
         fn postfix_op_precedence() {
             let code = "foo(1, 2, 3)[0]";
-            let mut src = Cursor::new(code);
-            let mut parser = Parser::new(&mut src);
+            let src = Source::from_str(code).expect("code is valid UTF-8");
+            let mut parser = Parser::new(&src).expect("failed to create parser");
 
             if let Ok(expr) = parser.parse_expr() {
                 assert_eq!(format!("{}", expr), "([] (foo(1, 2, 3)) 0)");
@@ -824,8 +813,8 @@ mod tests {
         #[test]
         fn unclosed_block() {
             let code = "fn foo() { let x = 1;";
-            let mut src = Cursor::new(code);
-            let mut parser = Parser::new(&mut src);
+            let src = Source::from_str(code).expect("code is valid UTF-8");
+            let mut parser = Parser::new(&src).expect("failed to create parser");
 
             match parser.next() {
                 Some(Err(ParserError::UnclosedBlock { span, .. })) => {
@@ -838,8 +827,8 @@ mod tests {
         #[test]
         fn unclosed_param_list() {
             let code = "fn foo(x, y { let x = 1;";
-            let mut src = Cursor::new(code);
-            let mut parser = Parser::new(&mut src);
+            let src = Source::from_str(code).expect("code is valid UTF-8");
+            let mut parser = Parser::new(&src).expect("failed to create parser");
 
             match parser.next() {
                 Some(Err(ParserError::UnclosedParamList { span, .. })) => {
@@ -852,8 +841,8 @@ mod tests {
         #[test]
         fn let_without_identifier() {
             let code = "let = 1;";
-            let mut src = Cursor::new(code);
-            let mut parser = Parser::new(&mut src);
+            let src = Source::from_str(code).expect("code is valid UTF-8");
+            let mut parser = Parser::new(&src).expect("failed to create parser");
 
             match parser.next() {
                 Some(Err(ParserError::ExpectedIdentifier { span, .. })) => {
@@ -866,8 +855,8 @@ mod tests {
         #[test]
         fn let_without_expression() {
             let code = "let x = ;";
-            let mut src = Cursor::new(code);
-            let mut parser = Parser::new(&mut src);
+            let src = Source::from_str(code).expect("code is valid UTF-8");
+            let mut parser = Parser::new(&src).expect("failed to create parser");
 
             match parser.next() {
                 Some(Err(ParserError::ExpectedExpression { span, .. })) => {

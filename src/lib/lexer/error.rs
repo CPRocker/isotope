@@ -3,6 +3,8 @@ use thiserror::Error;
 
 #[derive(Error, Diagnostic, Debug, Clone, PartialEq)]
 pub enum LexerError {
+    #[error(transparent)]
+    InvalidUtf8(#[from] std::str::Utf8Error),
     #[error("Unexpected token: `{found}`")]
     UnexpectedToken {
         found: String,

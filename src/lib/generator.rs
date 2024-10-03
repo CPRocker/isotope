@@ -1,7 +1,10 @@
 use miette::Diagnostic;
 use thiserror::Error;
 
-use crate::parser::{Parser, ParserError, Stmt};
+use crate::{
+    parser::{Parser, ParserError, Stmt},
+    source::Source,
+};
 
 #[derive(Error, Diagnostic, Debug)]
 pub enum GeneratorError {
@@ -15,25 +18,23 @@ pub enum GeneratorError {
     IoError(#[from] std::io::Error),
 }
 
-pub struct Generator<'iso, R, W>
+pub struct Generator<'iso, W>
 where
-    R: std::io::BufRead,
     W: std::io::Write,
 {
-    parser: Parser<'iso, R>,
+    parser: Parser<'iso>,
     writer: W,
 }
 
-impl<'iso, R, W> Generator<'iso, R, W>
+impl<'iso, W> Generator<'iso, W>
 where
-    R: std::io::BufRead,
     W: std::io::Write,
 {
-    pub fn new(src: &'iso mut R, out: W) -> Self {
-        Self {
-            parser: Parser::new(src),
+    pub fn new(src: &'iso Source, out: W) -> Result<Self, GeneratorError> {
+        Ok(Self {
+            parser: Parser::new(src).map_err(GeneratorError::from)?,
             writer: out,
-        }
+        })
     }
 
     pub fn generate(&mut self /* TODO: options */) -> Result<(), GeneratorError> {

@@ -63,8 +63,7 @@ fn main() -> Result<()> {
 }
 
 fn lex(src: isotope::source::Source) -> Result<()> {
-    let mut lex_src = src.clone();
-    let lexer = isotope::lexer::Lexer::new(&mut lex_src);
+    let lexer = isotope::lexer::Lexer::new(&src)?;
 
     for token in lexer {
         let token = token
@@ -77,8 +76,7 @@ fn lex(src: isotope::source::Source) -> Result<()> {
 }
 
 fn parse(src: isotope::source::Source) -> Result<()> {
-    let mut parse_src = src.clone();
-    let parser = isotope::parser::Parser::new(&mut parse_src);
+    let parser = isotope::parser::Parser::new(&src)?;
 
     for statement in parser {
         let statement = statement
@@ -91,8 +89,7 @@ fn parse(src: isotope::source::Source) -> Result<()> {
 }
 
 fn generate<W: std::io::Write>(src: isotope::source::Source, out: W) -> Result<()> {
-    let mut generate_src = src.clone();
-    let mut generator = isotope::generator::Generator::new(&mut generate_src, out);
+    let mut generator = isotope::generator::Generator::new(&src, out)?;
 
     generator
         .generate()
@@ -104,8 +101,7 @@ fn generate<W: std::io::Write>(src: isotope::source::Source, out: W) -> Result<(
 
 fn compile<W: std::io::Write>(src: isotope::source::Source, out: W) -> Result<()> {
     // TODO: decide on compiler backend based on machine
-    let mut compile_src = src.clone();
-    let mut compiler = isotope::compiler::Compiler::new(&mut compile_src, out);
+    let mut compiler = isotope::compiler::Compiler::new(&src, out)?;
 
     compiler
         .compile()

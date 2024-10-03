@@ -1,11 +1,11 @@
 /// Isotope source code
 #[derive(Debug, Clone)]
 pub struct Source {
-    /// Name of the source file
-    name: Option<String>,
-
     /// Source content in memory as bytes
     content: Vec<u8>,
+
+    /// Name of the source file
+    name: Option<String>,
 }
 
 impl Source {
@@ -24,21 +24,9 @@ impl Source {
         self.name = Some(name);
         self
     }
-}
 
-impl std::io::Read for Source {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        self.content.as_slice().read(buf)
-    }
-}
-
-impl std::io::BufRead for Source {
-    fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
-        Ok(&self.content)
-    }
-
-    fn consume(&mut self, amt: usize) {
-        self.content.drain(0..amt);
+    pub fn chars(&self) -> Result<std::str::Chars<'_>, std::str::Utf8Error> {
+        Ok(std::str::from_utf8(&self.content)?.chars())
     }
 }
 
@@ -70,5 +58,19 @@ impl miette::SourceCode for Source {
 impl From<Source> for miette::NamedSource<Source> {
     fn from(val: Source) -> Self {
         miette::NamedSource::new(val.name.clone().unwrap_or_default(), val).with_language("Isotope")
+    }
+}
+
+#[derive(Debug)]
+pub struct ParseSourceError;
+
+impl std::str::FromStr for Source {
+    type Err = ParseSourceError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self {
+            content: s.as_bytes().to_vec(),
+            name: None,
+        })
     }
 }

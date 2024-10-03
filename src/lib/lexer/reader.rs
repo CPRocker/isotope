@@ -1,37 +1,27 @@
 use std::iter::Peekable;
 
-use utf8_chars::BufReadCharsExt;
+use crate::source::Source;
 
-pub(crate) struct CharReader<'r, R>
-where
-    R: std::io::BufRead,
-{
-    chars: Peekable<utf8_chars::Chars<'r, R>>,
+pub(crate) struct CharReader<'r> {
+    chars: Peekable<std::str::Chars<'r>>,
     offset: usize,
 }
 
-impl<'r, R> CharReader<'r, R>
-where
-    R: std::io::BufRead,
-{
-    pub fn new(src: &'r mut R) -> Self {
-        Self {
-            chars: src.chars().peekable(),
+impl<'r> CharReader<'r> {
+    /// Returns a `Result<CharRead>` because this will fail if the source is not valid UTF-8
+    pub fn new(src: &'r Source) -> Result<Self, std::str::Utf8Error> {
+        Ok(Self {
+            chars: src.chars()?.peekable(),
             offset: 0,
-        }
+        })
     }
 
     pub fn offset(&self) -> usize {
         self.offset
     }
 
-    /// Note: this ignores errors and returns `None` instead.
     pub fn peek(&mut self) -> Option<&char> {
-        match self.chars.peek() {
-            Some(Ok(c)) => Some(c),
-            Some(Err(_)) => None,
-            None => None,
-        }
+        self.chars.peek()
     }
 
     pub fn skip_read_while(&mut self, predicate: impl Fn(&char) -> bool) {
@@ -45,26 +35,15 @@ where
     }
 }
 
-/// A character reader for a `std::io::BufRead` which iterates over one character at
-/// a time.
-///
-/// Note: this ignores errors and returns `None` (which ends the iterator) instead.
-impl<R> Iterator for CharReader<'_, R>
-where
-    R: std::io::BufRead,
-{
+impl Iterator for CharReader<'_> {
     type Item = char;
 
-    /// Reads the chars buffer and returns the next char.
-    ///
-    /// Note: this ignores errors and returns `None` (which ends the iterator) instead.
     fn next(&mut self) -> Option<Self::Item> {
         match self.chars.next() {
-            Some(Ok(c)) => {
+            Some(c) => {
                 self.offset += c.len_utf8();
                 Some(c)
             }
-            Some(Err(_)) => None,
             None => None,
         }
     }
@@ -73,13 +52,13 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Cursor;
+    use std::str::FromStr;
 
     #[test]
     fn peek() {
         let code = "0123";
-        let mut src = Cursor::new(code);
-        let mut reader = CharReader::new(&mut src);
+        let src = Source::from_str(code).expect("code is valid UTF-8");
+        let mut reader = CharReader::new(&src).expect("code is valid UTF-8");
 
         assert_eq!(reader.peek(), Some(&'0'));
         assert_eq!(reader.peek(), Some(&'0'));

@@ -67,12 +67,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "arrayvec"
-version = "0.7.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50"
-
-[[package]]
 name = "backtrace"
 version = "0.3.74"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -195,7 +189,6 @@ dependencies = [
  "clap",
  "miette",
  "thiserror",
- "utf8-chars",
 ]
 
 [[package]]
@@ -410,15 +403,6 @@ name = "unicode-width"
 version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7dd6e30e90baa6f72411720665d41d89b9a3d039dc45b8faea1ddd07f617f6af"
-
-[[package]]
-name = "utf8-chars"
-version = "3.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66f9218bb39c445e7b21b650c6f82108859cc0609082abe2820c1f7a2e8b2a5f"
-dependencies = [
- "arrayvec",
-]
 
 [[package]]
 name = "utf8parse"

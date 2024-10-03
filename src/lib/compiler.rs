@@ -1,7 +1,10 @@
 use miette::Diagnostic;
 use thiserror::Error;
 
-use crate::generator::{Generator, GeneratorError};
+use crate::{
+    generator::{Generator, GeneratorError},
+    source::Source,
+};
 
 #[derive(Error, Diagnostic, Debug)]
 pub enum CompilerError {
@@ -13,23 +16,21 @@ pub enum CompilerError {
     ),
 }
 
-pub struct Compiler<'iso, R, W>
+pub struct Compiler<'iso, W>
 where
-    R: std::io::BufRead,
     W: std::io::Write,
 {
-    generator: Generator<'iso, R, W>,
+    generator: Generator<'iso, W>,
 }
 
-impl<'de, R, W> Compiler<'de, R, W>
+impl<'iso, W> Compiler<'iso, W>
 where
-    R: std::io::BufRead,
     W: std::io::Write,
 {
-    pub fn new(src: &'de mut R, out: W) -> Self {
-        Self {
-            generator: Generator::new(src, out),
-        }
+    pub fn new(src: &'iso Source, out: W) -> Result<Self, CompilerError> {
+        Ok(Self {
+            generator: Generator::new(src, out).map_err(CompilerError::from)?,
+        })
     }
 
     pub fn compile(&mut self /* TODO: options */) -> Result<(), CompilerError> {
