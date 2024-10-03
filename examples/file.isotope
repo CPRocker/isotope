@@ -24,8 +24,8 @@ loop {
 
 if(a < 10) 
 {
-    break;
-} 
+    break
+}
 else 
 {
     a = 10;

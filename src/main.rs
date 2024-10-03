@@ -25,12 +25,6 @@ enum Command {
 
 #[derive(Error, Diagnostic, Debug)]
 pub enum CliError {
-    #[error("Failed to read file: {file_path}")]
-    FileReadError {
-        file_path: String,
-        #[source]
-        source: std::io::Error,
-    },
     #[error("Invalid file extension: {file_extension}")]
     #[diagnostic(help(
         "The file extension must match one of the following: .isotope, .tope, or .⚛️."
@@ -55,55 +49,68 @@ fn main() -> Result<()> {
     }
 
     let file = fs::File::open(file_path).into_diagnostic()?;
-    let mut reader = std::io::BufReader::new(file);
+    let source = isotope::source::Source::from_reader(file).into_diagnostic()?;
 
     let stdout = std::io::stdout();
     let stdout = stdout.lock();
 
     match args.command {
-        Command::Lex => lex(&mut reader),
-        Command::Parse => parse(&mut reader),
-        Command::Generate => generate(&mut reader, stdout),
-        Command::Compile => compile(&mut reader, stdout),
+        Command::Lex => lex(source),
+        Command::Parse => parse(source),
+        Command::Generate => generate(source, stdout),
+        Command::Compile => compile(source, stdout),
     }
 }
 
-fn lex<R: std::io::BufRead>(src: &mut R) -> Result<()> {
-    let lexer = isotope::lexer::Lexer::new(src);
+fn lex(src: isotope::source::Source) -> Result<()> {
+    let mut lex_src = src.clone();
+    let lexer = isotope::lexer::Lexer::new(&mut lex_src);
 
     for token in lexer {
-        let token = token?;
+        let token = token
+            .into_diagnostic()
+            .map_err(|e| e.with_source_code(src.clone()))?;
         println!("{:?}", token);
     }
 
     Ok(())
 }
 
-fn parse<R: std::io::BufRead>(src: &mut R) -> Result<()> {
-    let parser = isotope::parser::Parser::new(src);
+fn parse(src: isotope::source::Source) -> Result<()> {
+    let mut parse_src = src.clone();
+    let parser = isotope::parser::Parser::new(&mut parse_src);
 
     for statement in parser {
-        let statement = statement?;
+        let statement = statement
+            .into_diagnostic()
+            .map_err(|e| e.with_source_code(src.clone()))?;
         println!("{}", statement);
     }
 
     Ok(())
 }
 
-fn generate<R: std::io::BufRead, W: std::io::Write>(src: &mut R, out: W) -> Result<()> {
-    // TODO: make out configurable
-    let mut generator = isotope::generator::Generator::new(src, out);
+fn generate<W: std::io::Write>(src: isotope::source::Source, out: W) -> Result<()> {
+    let mut generate_src = src.clone();
+    let mut generator = isotope::generator::Generator::new(&mut generate_src, out);
 
-    generator.generate()?;
+    generator
+        .generate()
+        .into_diagnostic()
+        .map_err(|e| e.with_source_code(src.clone()))?;
 
     Ok(())
 }
 
-fn compile<R: std::io::BufRead, W: std::io::Write>(src: &mut R, out: W) -> Result<()> {
+fn compile<W: std::io::Write>(src: isotope::source::Source, out: W) -> Result<()> {
     // TODO: decide on compiler backend based on machine
-    let mut compiler = isotope::compiler::Compiler::new(src, out);
+    let mut compile_src = src.clone();
+    let mut compiler = isotope::compiler::Compiler::new(&mut compile_src, out);
 
-    compiler.compile()?;
+    compiler
+        .compile()
+        .into_diagnostic()
+        .map_err(|e| e.with_source_code(src.clone()))?;
 
     Ok(())
 }
