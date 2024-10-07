@@ -57,13 +57,16 @@ fn main() -> Result<()> {
     match args.command {
         Command::Lex => lex(source),
         Command::Parse => parse(source),
-        Command::Generate => generate(source, stdout),
+        Command::Generate => generate(source),
         Command::Compile => compile(source, stdout),
     }
 }
 
 fn lex(src: isotope::source::Source) -> Result<()> {
-    let lexer = isotope::lexer::Lexer::new(&src)?;
+    let symbol_table = std::rc::Rc::new(std::cell::RefCell::new(
+        isotope::symbol_table::SymbolTable::default(),
+    ));
+    let lexer = isotope::lexer::Lexer::new(&src, std::rc::Rc::clone(&symbol_table))?;
 
     for token in lexer {
         let token = token
@@ -76,7 +79,10 @@ fn lex(src: isotope::source::Source) -> Result<()> {
 }
 
 fn parse(src: isotope::source::Source) -> Result<()> {
-    let parser = isotope::parser::Parser::new(&src)?;
+    let symbol_table = std::rc::Rc::new(std::cell::RefCell::new(
+        isotope::symbol_table::SymbolTable::default(),
+    ));
+    let parser = isotope::parser::Parser::new(&src, std::rc::Rc::clone(&symbol_table))?;
 
     for statement in parser {
         let statement = statement
@@ -88,20 +94,25 @@ fn parse(src: isotope::source::Source) -> Result<()> {
     Ok(())
 }
 
-fn generate<W: std::io::Write>(src: isotope::source::Source, out: W) -> Result<()> {
-    let mut generator = isotope::generator::Generator::new(&src, out)?;
+fn generate(src: isotope::source::Source) -> Result<()> {
+    let symbol_table = std::rc::Rc::new(std::cell::RefCell::new(
+        isotope::symbol_table::SymbolTable::default(),
+    ));
+    let generator = isotope::generator::Generator::new(&src, std::rc::Rc::clone(&symbol_table))?;
 
-    generator
-        .generate()
-        .into_diagnostic()
-        .map_err(|e| e.with_source_code(src.clone()))?;
+    for statement in generator {
+        let statement = statement
+            .into_diagnostic()
+            .map_err(|e| e.with_source_code(src.clone()))?;
+        println!("{}", statement);
+    }
 
     Ok(())
 }
 
 fn compile<W: std::io::Write>(src: isotope::source::Source, out: W) -> Result<()> {
     // TODO: decide on compiler backend based on machine
-    let mut compiler = isotope::compiler::Compiler::new(&src, out)?;
+    let compiler = isotope::compiler::Compiler::new(&src, out)?;
 
     compiler
         .compile()

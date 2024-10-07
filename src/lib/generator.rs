@@ -4,6 +4,7 @@ use thiserror::Error;
 use crate::{
     parser::{Parser, ParserError, Stmt},
     source::Source,
+    symbol_table,
 };
 
 #[derive(Error, Diagnostic, Debug)]
@@ -14,50 +15,51 @@ pub enum GeneratorError {
         #[diagnostic_source]
         ParserError,
     ),
-    #[error(transparent)]
-    IoError(#[from] std::io::Error),
 }
 
-pub struct Generator<'iso, W>
-where
-    W: std::io::Write,
-{
-    parser: Parser<'iso>,
-    writer: W,
+pub struct Generator<'iso> {
+    parser: std::iter::Peekable<Parser<'iso>>,
+    symbol_table: std::rc::Rc<std::cell::RefCell<symbol_table::SymbolTable<'iso>>>,
 }
 
-impl<'iso, W> Generator<'iso, W>
-where
-    W: std::io::Write,
-{
-    pub fn new(src: &'iso Source, out: W) -> Result<Self, GeneratorError> {
+impl<'iso> Generator<'iso> {
+    pub fn new(
+        src: &'iso Source,
+        symbol_table: std::rc::Rc<std::cell::RefCell<symbol_table::SymbolTable<'iso>>>,
+    ) -> Result<Self, GeneratorError> {
         Ok(Self {
-            parser: Parser::new(src).map_err(GeneratorError::from)?,
-            writer: out,
+            parser: Parser::new(src, std::rc::Rc::clone(&symbol_table))?.peekable(),
+            symbol_table: std::rc::Rc::clone(&symbol_table),
         })
     }
+}
 
-    pub fn generate(&mut self /* TODO: options */) -> Result<(), GeneratorError> {
-        for statement in self.parser.by_ref() {
-            let statement = statement.map_err(GeneratorError::ParserError)?;
-            let ir = match statement {
-                Stmt::Assignment { name, value } => todo!(),
-                Stmt::Break => todo!(),
-                Stmt::Expr(expr) => todo!(),
-                Stmt::FunctionDeclaration { name, params, body } => todo!(),
-                Stmt::If {
-                    condition,
-                    body,
-                    else_body,
-                } => todo!(),
-                Stmt::LetDeclaration { name, value } => todo!(),
-                Stmt::Loop { body } => todo!(),
-                Stmt::Nop => "nop".to_string(),
-                Stmt::Return(expr) => todo!(),
-            };
-            writeln!(self.writer, "{}", ir).map_err(GeneratorError::IoError)?;
+impl<'iso> std::iter::Iterator for Generator<'iso> {
+    type Item = Result<String, GeneratorError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.parser.peek()?;
+        Some(self.generate_statement())
+    }
+}
+
+impl<'iso> Generator<'iso> {
+    fn generate_statement(&mut self) -> Result<String, GeneratorError> {
+        match self.parser.next().expect("peek already checked")? {
+            // TODO: need symbol table that tracks variables
+            Stmt::Assignment { name, value } => todo!(),
+            Stmt::Break => todo!(),
+            Stmt::Expr(expr) => todo!(),
+            Stmt::FunctionDeclaration { name, params, body } => todo!(),
+            Stmt::If {
+                condition,
+                body,
+                else_body,
+            } => todo!(),
+            Stmt::LetDeclaration { name, value } => todo!(),
+            Stmt::Loop { body } => todo!(),
+            Stmt::Nop => todo!(),
+            Stmt::Return(expr) => todo!(),
         }
-
-        self.writer.flush().map_err(GeneratorError::IoError)
     }
 }

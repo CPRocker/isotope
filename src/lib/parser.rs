@@ -2,6 +2,7 @@ use miette::Result;
 
 use crate::lexer::{Lexer, Token, TokenKind};
 use crate::source::Source;
+use crate::symbol_table;
 
 mod error;
 mod expression;
@@ -15,12 +16,17 @@ pub use statement::Stmt;
 
 pub struct Parser<'iso> {
     lexer: std::iter::Peekable<Lexer<'iso>>,
+    symbol_table: std::rc::Rc<std::cell::RefCell<symbol_table::SymbolTable<'iso>>>,
 }
 
 impl<'iso> Parser<'iso> {
-    pub fn new(src: &'iso Source) -> Result<Self, ParserError> {
+    pub fn new(
+        src: &'iso Source,
+        symbol_table: std::rc::Rc<std::cell::RefCell<symbol_table::SymbolTable<'iso>>>,
+    ) -> Result<Self, ParserError> {
         Ok(Self {
-            lexer: Lexer::new(src)?.peekable(),
+            lexer: Lexer::new(src, std::rc::Rc::clone(&symbol_table))?.peekable(),
+            symbol_table: std::rc::Rc::clone(&symbol_table),
         })
     }
 }
@@ -550,7 +556,10 @@ mod tests {
     fn eof() {
         let code = "";
         let src = Source::from_str(code).expect("code is valid UTF-8");
-        let mut parser = Parser::new(&src).expect("failed to create parser");
+        let symbol_table =
+            std::rc::Rc::new(std::cell::RefCell::new(symbol_table::SymbolTable::default()));
+        let mut parser =
+            Parser::new(&src, std::rc::Rc::clone(&symbol_table)).expect("failed to create parser");
 
         assert!(parser.next().is_none());
     }
@@ -559,7 +568,10 @@ mod tests {
     fn nop() {
         let code = ";;;";
         let src = Source::from_str(code).expect("code is valid UTF-8");
-        let mut parser = Parser::new(&src).expect("failed to create parser");
+        let symbol_table =
+            std::rc::Rc::new(std::cell::RefCell::new(symbol_table::SymbolTable::default()));
+        let mut parser =
+            Parser::new(&src, std::rc::Rc::clone(&symbol_table)).expect("failed to create parser");
 
         match parser.next() {
             Some(Ok(Stmt::Nop)) => {}
@@ -571,7 +583,10 @@ mod tests {
     fn let_statement() {
         let code = "let x = 1;";
         let src = Source::from_str(code).expect("code is valid UTF-8");
-        let mut parser = Parser::new(&src).expect("failed to create parser");
+        let symbol_table =
+            std::rc::Rc::new(std::cell::RefCell::new(symbol_table::SymbolTable::default()));
+        let mut parser =
+            Parser::new(&src, std::rc::Rc::clone(&symbol_table)).expect("failed to create parser");
 
         match parser.next() {
             Some(Ok(Stmt::LetDeclaration { name, value })) => {
@@ -586,7 +601,10 @@ mod tests {
     fn assignment_statement() {
         let code = "x = 1;";
         let src = Source::from_str(code).expect("code is valid UTF-8");
-        let mut parser = Parser::new(&src).expect("failed to create parser");
+        let symbol_table =
+            std::rc::Rc::new(std::cell::RefCell::new(symbol_table::SymbolTable::default()));
+        let mut parser =
+            Parser::new(&src, std::rc::Rc::clone(&symbol_table)).expect("failed to create parser");
 
         match parser.next() {
             Some(Ok(Stmt::Assignment { name, value })) => {
@@ -601,7 +619,10 @@ mod tests {
     fn return_statement() {
         let code = "return 1;";
         let src = Source::from_str(code).expect("code is valid UTF-8");
-        let mut parser = Parser::new(&src).expect("failed to create parser");
+        let symbol_table =
+            std::rc::Rc::new(std::cell::RefCell::new(symbol_table::SymbolTable::default()));
+        let mut parser =
+            Parser::new(&src, std::rc::Rc::clone(&symbol_table)).expect("failed to create parser");
 
         match parser.next() {
             Some(Ok(Stmt::Return(expr))) => {
@@ -615,7 +636,10 @@ mod tests {
     fn break_statement() {
         let code = "break;";
         let src = Source::from_str(code).expect("code is valid UTF-8");
-        let mut parser = Parser::new(&src).expect("failed to create parser");
+        let symbol_table =
+            std::rc::Rc::new(std::cell::RefCell::new(symbol_table::SymbolTable::default()));
+        let mut parser =
+            Parser::new(&src, std::rc::Rc::clone(&symbol_table)).expect("failed to create parser");
 
         match parser.next() {
             Some(Ok(Stmt::Break)) => {}
@@ -627,7 +651,10 @@ mod tests {
     fn loop_statement() {
         let code = "loop { let x = 1; break; }";
         let src = Source::from_str(code).expect("code is valid UTF-8");
-        let mut parser = Parser::new(&src).expect("failed to create parser");
+        let symbol_table =
+            std::rc::Rc::new(std::cell::RefCell::new(symbol_table::SymbolTable::default()));
+        let mut parser =
+            Parser::new(&src, std::rc::Rc::clone(&symbol_table)).expect("failed to create parser");
 
         match parser.next() {
             Some(Ok(Stmt::Loop { body })) => {
@@ -643,7 +670,10 @@ mod tests {
     fn if_statement() {
         let code = "if(true) { let x = 1; }";
         let src = Source::from_str(code).expect("code is valid UTF-8");
-        let mut parser = Parser::new(&src).expect("failed to create parser");
+        let symbol_table =
+            std::rc::Rc::new(std::cell::RefCell::new(symbol_table::SymbolTable::default()));
+        let mut parser =
+            Parser::new(&src, std::rc::Rc::clone(&symbol_table)).expect("failed to create parser");
 
         match parser.next() {
             Some(Ok(Stmt::If {
@@ -664,7 +694,10 @@ mod tests {
     fn if_else_statement() {
         let code = "if(true) { let x = 1; } else { let x = 2; }";
         let src = Source::from_str(code).expect("code is valid UTF-8");
-        let mut parser = Parser::new(&src).expect("failed to create parser");
+        let symbol_table =
+            std::rc::Rc::new(std::cell::RefCell::new(symbol_table::SymbolTable::default()));
+        let mut parser =
+            Parser::new(&src, std::rc::Rc::clone(&symbol_table)).expect("failed to create parser");
 
         match parser.next() {
             Some(Ok(Stmt::If {
@@ -690,7 +723,10 @@ mod tests {
     fn if_else_if_statement() {
         let code = "if(true) { let x = 1; } else if(false) { let x = 2; }";
         let src = Source::from_str(code).expect("code is valid UTF-8");
-        let mut parser = Parser::new(&src).expect("failed to create parser");
+        let symbol_table =
+            std::rc::Rc::new(std::cell::RefCell::new(symbol_table::SymbolTable::default()));
+        let mut parser =
+            Parser::new(&src, std::rc::Rc::clone(&symbol_table)).expect("failed to create parser");
 
         match parser.next() {
             Some(Ok(Stmt::If {
@@ -719,7 +755,10 @@ mod tests {
         fn function_call() {
             let code = "foo(1, 2, 3)";
             let src = Source::from_str(code).expect("code is valid UTF-8");
-            let mut parser = Parser::new(&src).expect("failed to create parser");
+            let symbol_table =
+                std::rc::Rc::new(std::cell::RefCell::new(symbol_table::SymbolTable::default()));
+            let mut parser = Parser::new(&src, std::rc::Rc::clone(&symbol_table))
+                .expect("failed to create parser");
 
             if let Ok(expr) = parser.parse_expr() {
                 assert_eq!(format!("{}", expr), "(foo(1, 2, 3))");
@@ -732,7 +771,10 @@ mod tests {
         fn indexing() {
             let code = "foo[0]";
             let src = Source::from_str(code).expect("code is valid UTF-8");
-            let mut parser = Parser::new(&src).expect("failed to create parser");
+            let symbol_table =
+                std::rc::Rc::new(std::cell::RefCell::new(symbol_table::SymbolTable::default()));
+            let mut parser = Parser::new(&src, std::rc::Rc::clone(&symbol_table))
+                .expect("failed to create parser");
 
             if let Ok(expr) = parser.parse_expr() {
                 assert_eq!(format!("{}", expr), "([] foo 0)");
@@ -745,7 +787,10 @@ mod tests {
         fn prefix_op_precedence() {
             let code = "-1 + 2";
             let src = Source::from_str(code).expect("code is valid UTF-8");
-            let mut parser = Parser::new(&src).expect("failed to create parser");
+            let symbol_table =
+                std::rc::Rc::new(std::cell::RefCell::new(symbol_table::SymbolTable::default()));
+            let mut parser = Parser::new(&src, std::rc::Rc::clone(&symbol_table))
+                .expect("failed to create parser");
 
             if let Ok(expr) = parser.parse_expr() {
                 assert_eq!(format!("{}", expr), "(+ (- 1) 2)");
@@ -758,7 +803,10 @@ mod tests {
         fn additive_infix_op_precedence() {
             let code = "1 + 2 - 3";
             let src = Source::from_str(code).expect("code is valid UTF-8");
-            let mut parser = Parser::new(&src).expect("failed to create parser");
+            let symbol_table =
+                std::rc::Rc::new(std::cell::RefCell::new(symbol_table::SymbolTable::default()));
+            let mut parser = Parser::new(&src, std::rc::Rc::clone(&symbol_table))
+                .expect("failed to create parser");
 
             if let Ok(expr) = parser.parse_expr() {
                 assert_eq!(format!("{}", expr), "(- (+ 1 2) 3)");
@@ -771,7 +819,10 @@ mod tests {
         fn infix_op_precedence() {
             let code = "0 + 1 * 2 - 3 / 4";
             let src = Source::from_str(code).expect("code is valid UTF-8");
-            let mut parser = Parser::new(&src).expect("failed to create parser");
+            let symbol_table =
+                std::rc::Rc::new(std::cell::RefCell::new(symbol_table::SymbolTable::default()));
+            let mut parser = Parser::new(&src, std::rc::Rc::clone(&symbol_table))
+                .expect("failed to create parser");
 
             if let Ok(expr) = parser.parse_expr() {
                 assert_eq!(format!("{}", expr), "(- (+ 0 (* 1 2)) (/ 3 4))");
@@ -784,7 +835,10 @@ mod tests {
         fn infix_postfix_op_precedence() {
             let code = "1 + foo[0] - 3";
             let src = Source::from_str(code).expect("code is valid UTF-8");
-            let mut parser = Parser::new(&src).expect("failed to create parser");
+            let symbol_table =
+                std::rc::Rc::new(std::cell::RefCell::new(symbol_table::SymbolTable::default()));
+            let mut parser = Parser::new(&src, std::rc::Rc::clone(&symbol_table))
+                .expect("failed to create parser");
 
             if let Ok(expr) = parser.parse_expr() {
                 assert_eq!(format!("{}", expr), "(- (+ 1 ([] foo 0)) 3)");
@@ -797,7 +851,10 @@ mod tests {
         fn postfix_op_precedence() {
             let code = "foo(1, 2, 3)[0]";
             let src = Source::from_str(code).expect("code is valid UTF-8");
-            let mut parser = Parser::new(&src).expect("failed to create parser");
+            let symbol_table =
+                std::rc::Rc::new(std::cell::RefCell::new(symbol_table::SymbolTable::default()));
+            let mut parser = Parser::new(&src, std::rc::Rc::clone(&symbol_table))
+                .expect("failed to create parser");
 
             if let Ok(expr) = parser.parse_expr() {
                 assert_eq!(format!("{}", expr), "([] (foo(1, 2, 3)) 0)");
@@ -814,7 +871,10 @@ mod tests {
         fn unclosed_block() {
             let code = "fn foo() { let x = 1;";
             let src = Source::from_str(code).expect("code is valid UTF-8");
-            let mut parser = Parser::new(&src).expect("failed to create parser");
+            let symbol_table =
+                std::rc::Rc::new(std::cell::RefCell::new(symbol_table::SymbolTable::default()));
+            let mut parser = Parser::new(&src, std::rc::Rc::clone(&symbol_table))
+                .expect("failed to create parser");
 
             match parser.next() {
                 Some(Err(ParserError::UnclosedBlock { span, .. })) => {
@@ -828,7 +888,10 @@ mod tests {
         fn unclosed_param_list() {
             let code = "fn foo(x, y { let x = 1;";
             let src = Source::from_str(code).expect("code is valid UTF-8");
-            let mut parser = Parser::new(&src).expect("failed to create parser");
+            let symbol_table =
+                std::rc::Rc::new(std::cell::RefCell::new(symbol_table::SymbolTable::default()));
+            let mut parser = Parser::new(&src, std::rc::Rc::clone(&symbol_table))
+                .expect("failed to create parser");
 
             match parser.next() {
                 Some(Err(ParserError::UnclosedParamList { span, .. })) => {
@@ -842,7 +905,10 @@ mod tests {
         fn let_without_identifier() {
             let code = "let = 1;";
             let src = Source::from_str(code).expect("code is valid UTF-8");
-            let mut parser = Parser::new(&src).expect("failed to create parser");
+            let symbol_table =
+                std::rc::Rc::new(std::cell::RefCell::new(symbol_table::SymbolTable::default()));
+            let mut parser = Parser::new(&src, std::rc::Rc::clone(&symbol_table))
+                .expect("failed to create parser");
 
             match parser.next() {
                 Some(Err(ParserError::ExpectedIdentifier { span, .. })) => {
@@ -856,7 +922,10 @@ mod tests {
         fn let_without_expression() {
             let code = "let x = ;";
             let src = Source::from_str(code).expect("code is valid UTF-8");
-            let mut parser = Parser::new(&src).expect("failed to create parser");
+            let symbol_table =
+                std::rc::Rc::new(std::cell::RefCell::new(symbol_table::SymbolTable::default()));
+            let mut parser = Parser::new(&src, std::rc::Rc::clone(&symbol_table))
+                .expect("failed to create parser");
 
             match parser.next() {
                 Some(Err(ParserError::ExpectedExpression { span, .. })) => {

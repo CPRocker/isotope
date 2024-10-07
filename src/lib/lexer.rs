@@ -1,5 +1,8 @@
 use miette::Result;
 
+use crate::source::Source;
+use crate::symbol_table;
+
 mod error;
 mod reader;
 mod token;
@@ -8,16 +11,19 @@ pub use error::LexerError;
 pub use token::Token;
 pub use token::TokenKind;
 
-use crate::source::Source;
-
 pub struct Lexer<'iso> {
     reader: reader::CharReader<'iso>,
+    symbol_table: std::rc::Rc<std::cell::RefCell<symbol_table::SymbolTable<'iso>>>,
 }
 
 impl<'iso> Lexer<'iso> {
-    pub fn new(src: &'iso Source) -> Result<Self, LexerError> {
+    pub fn new(
+        src: &'iso Source,
+        symbol_table: std::rc::Rc<std::cell::RefCell<symbol_table::SymbolTable<'iso>>>,
+    ) -> Result<Self, LexerError> {
         Ok(Self {
             reader: reader::CharReader::new(src).map_err(LexerError::from)?,
+            symbol_table: std::rc::Rc::clone(&symbol_table),
         })
     }
 
@@ -269,7 +275,10 @@ mod tests {
     fn eof() {
         let code = "";
         let src = Source::from_str(code).expect("code is valid UTF-8");
-        let mut lexer = Lexer::new(&src).expect("failed to create lexer");
+        let symbol_table =
+            std::rc::Rc::new(std::cell::RefCell::new(symbol_table::SymbolTable::default()));
+        let mut lexer =
+            Lexer::new(&src, std::rc::Rc::clone(&symbol_table)).expect("failed to create lexer");
 
         assert!(lexer.next().is_none());
     }
@@ -278,7 +287,10 @@ mod tests {
     fn whitespace() {
         let code = "  \t\n\r";
         let src = Source::from_str(code).expect("code is valid UTF-8");
-        let mut lexer = Lexer::new(&src).expect("failed to create lexer");
+        let symbol_table =
+            std::rc::Rc::new(std::cell::RefCell::new(symbol_table::SymbolTable::default()));
+        let mut lexer =
+            Lexer::new(&src, std::rc::Rc::clone(&symbol_table)).expect("failed to create lexer");
 
         assert!(lexer.next().is_none());
     }
@@ -291,7 +303,10 @@ mod tests {
         ;
         "#;
         let src = Source::from_str(code).expect("code is valid UTF-8");
-        let mut lexer = Lexer::new(&src).expect("failed to create lexer");
+        let symbol_table =
+            std::rc::Rc::new(std::cell::RefCell::new(symbol_table::SymbolTable::default()));
+        let mut lexer =
+            Lexer::new(&src, std::rc::Rc::clone(&symbol_table)).expect("failed to create lexer");
 
         assert_token!(lexer, Semicolon, ";", 91);
     }
@@ -305,7 +320,10 @@ mod tests {
         ;
         "#;
         let src = Source::from_str(code).expect("code is valid UTF-8");
-        let mut lexer = Lexer::new(&src).expect("failed to create lexer");
+        let symbol_table =
+            std::rc::Rc::new(std::cell::RefCell::new(symbol_table::SymbolTable::default()));
+        let mut lexer =
+            Lexer::new(&src, std::rc::Rc::clone(&symbol_table)).expect("failed to create lexer");
 
         assert_token!(lexer, Semicolon, ";", 67);
     }
@@ -314,7 +332,10 @@ mod tests {
     fn parens_brackets_curlys() {
         let code = "( ) [ ] { }";
         let src = Source::from_str(code).expect("code is valid UTF-8");
-        let mut lexer = Lexer::new(&src).expect("failed to create lexer");
+        let symbol_table =
+            std::rc::Rc::new(std::cell::RefCell::new(symbol_table::SymbolTable::default()));
+        let mut lexer =
+            Lexer::new(&src, std::rc::Rc::clone(&symbol_table)).expect("failed to create lexer");
 
         assert_token!(lexer, LeftParen, "(", 0);
         assert_token!(lexer, RightParen, ")", 2);
@@ -327,7 +348,10 @@ mod tests {
     fn keywords() {
         let code = "let return fn if else loop break true false";
         let src = Source::from_str(code).expect("code is valid UTF-8");
-        let mut lexer = Lexer::new(&src).expect("failed to create lexer");
+        let symbol_table =
+            std::rc::Rc::new(std::cell::RefCell::new(symbol_table::SymbolTable::default()));
+        let mut lexer =
+            Lexer::new(&src, std::rc::Rc::clone(&symbol_table)).expect("failed to create lexer");
 
         assert_token!(lexer, Let, "let", 0);
         assert_token!(lexer, Return, "return", 4);
@@ -344,7 +368,10 @@ mod tests {
     fn numbers() {
         let code = "123 123.456 123.456.789";
         let src = Source::from_str(code).expect("code is valid UTF-8");
-        let mut lexer = Lexer::new(&src).expect("failed to create lexer");
+        let symbol_table =
+            std::rc::Rc::new(std::cell::RefCell::new(symbol_table::SymbolTable::default()));
+        let mut lexer =
+            Lexer::new(&src, std::rc::Rc::clone(&symbol_table)).expect("failed to create lexer");
 
         assert_token!(lexer, Number, "123", 0);
         assert_token!(lexer, Number, "123.456", 4);
@@ -357,7 +384,10 @@ mod tests {
     fn identifiers() {
         let code = "foo bar baz";
         let src = Source::from_str(code).expect("code is valid UTF-8");
-        let mut lexer = Lexer::new(&src).expect("failed to create lexer");
+        let symbol_table =
+            std::rc::Rc::new(std::cell::RefCell::new(symbol_table::SymbolTable::default()));
+        let mut lexer =
+            Lexer::new(&src, std::rc::Rc::clone(&symbol_table)).expect("failed to create lexer");
 
         assert_token!(lexer, Identifier, "foo", 0);
         assert_token!(lexer, Identifier, "bar", 4);
@@ -370,7 +400,10 @@ mod tests {
         a
         z""#;
         let src = Source::from_str(code).expect("code is valid UTF-8");
-        let mut lexer = Lexer::new(&src).expect("failed to create lexer");
+        let symbol_table =
+            std::rc::Rc::new(std::cell::RefCell::new(symbol_table::SymbolTable::default()));
+        let mut lexer =
+            Lexer::new(&src, std::rc::Rc::clone(&symbol_table)).expect("failed to create lexer");
 
         assert_token!(lexer, String, "\"foo\"", 0);
         assert_token!(lexer, String, "\"bar\"", 6);
@@ -381,7 +414,10 @@ mod tests {
     fn operators() {
         let code = "+ - * / % ^";
         let src = Source::from_str(code).expect("code is valid UTF-8");
-        let mut lexer = Lexer::new(&src).expect("failed to create lexer");
+        let symbol_table =
+            std::rc::Rc::new(std::cell::RefCell::new(symbol_table::SymbolTable::default()));
+        let mut lexer =
+            Lexer::new(&src, std::rc::Rc::clone(&symbol_table)).expect("failed to create lexer");
 
         assert_token!(lexer, Plus, "+", 0);
         assert_token!(lexer, Minus, "-", 2);
@@ -395,7 +431,10 @@ mod tests {
     fn comparison_operators() {
         let code = "= == === ! != !!= > >= >>= < <= <<=";
         let src = Source::from_str(code).expect("code is valid UTF-8");
-        let mut lexer = Lexer::new(&src).expect("failed to create lexer");
+        let symbol_table =
+            std::rc::Rc::new(std::cell::RefCell::new(symbol_table::SymbolTable::default()));
+        let mut lexer =
+            Lexer::new(&src, std::rc::Rc::clone(&symbol_table)).expect("failed to create lexer");
 
         assert_token!(lexer, Equal, "=", 0);
         assert_token!(lexer, EqualEqual, "==", 2);
@@ -421,7 +460,10 @@ mod tests {
         fn unexpected_token() {
             let code = "let $ = 1;";
             let src = Source::from_str(code).expect("code is valid UTF-8");
-            let mut lexer = Lexer::new(&src).expect("failed to create lexer");
+            let symbol_table =
+                std::rc::Rc::new(std::cell::RefCell::new(symbol_table::SymbolTable::default()));
+            let mut lexer = Lexer::new(&src, std::rc::Rc::clone(&symbol_table))
+                .expect("failed to create lexer");
 
             assert_token!(lexer, Let, "let", 0);
 
@@ -437,7 +479,10 @@ mod tests {
         fn unclosed_block_comment() {
             let code = "let /* testing  = 1;";
             let src = Source::from_str(code).expect("code is valid UTF-8");
-            let mut lexer = Lexer::new(&src).expect("failed to create lexer");
+            let symbol_table =
+                std::rc::Rc::new(std::cell::RefCell::new(symbol_table::SymbolTable::default()));
+            let mut lexer = Lexer::new(&src, std::rc::Rc::clone(&symbol_table))
+                .expect("failed to create lexer");
 
             assert_token!(lexer, Let, "let", 0);
 
@@ -453,7 +498,10 @@ mod tests {
         fn unclosed_string() {
             let code = "let x = \"hello there;";
             let src = Source::from_str(code).expect("code is valid UTF-8");
-            let mut lexer = Lexer::new(&src).expect("failed to create lexer");
+            let symbol_table =
+                std::rc::Rc::new(std::cell::RefCell::new(symbol_table::SymbolTable::default()));
+            let mut lexer = Lexer::new(&src, std::rc::Rc::clone(&symbol_table))
+                .expect("failed to create lexer");
 
             assert_token!(lexer, Let, "let", 0);
             assert_token!(lexer, Identifier, "x", 4);
