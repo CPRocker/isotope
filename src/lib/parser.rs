@@ -2,7 +2,7 @@ use miette::Result;
 
 use crate::lexer::{Lexer, Token, TokenKind};
 use crate::source::Source;
-use crate::symbol_table;
+use crate::symbol_table::{self, Type};
 
 mod error;
 mod expression;
@@ -58,6 +58,8 @@ impl<'iso> Parser<'iso> {
         let left_curly = self.expect_token(TokenKind::LeftCurly)?;
         let mut statements = vec![];
 
+        self.symbol_table.borrow_mut().enter_scope();
+
         loop {
             match self.lexer.peek() {
                 Some(Ok(Token {
@@ -79,6 +81,8 @@ impl<'iso> Parser<'iso> {
             .map_err(|_| ParserError::UnclosedBlock {
                 span: (left_curly.span()).into(),
             })?;
+
+        self.symbol_table.borrow_mut().exit_scope();
 
         Ok(statements)
     }
@@ -113,8 +117,26 @@ impl<'iso> Parser<'iso> {
             }) => {
                 self.lexer.next();
                 let name = self.parse_identifier()?;
+                self.symbol_table.borrow_mut().add(
+                    "", /* TODO: use name */
+                    symbol_table::SymbolKind::Function,
+                    None,
+                );
+
                 let params = self.parse_param_list()?;
+                // must enter and exit scope for parameters to match body scope
+                self.symbol_table.borrow_mut().enter_scope();
+                for param in &params {
+                    self.symbol_table.borrow_mut().add(
+                        "", /* TODO: use param name */
+                        symbol_table::SymbolKind::Variable,
+                        Some(Type::Unknown),
+                    )
+                }
+                self.symbol_table.borrow_mut().exit_scope();
+
                 let body = self.parse_block()?;
+
                 Ok(Stmt::FunctionDeclaration { name, params, body })
             }
             Ok(Token {
@@ -187,6 +209,12 @@ impl<'iso> Parser<'iso> {
                 self.expect_token(TokenKind::Equal)?;
                 let value = self.parse_expr()?;
                 self.expect_token(TokenKind::Semicolon)?;
+
+                self.symbol_table.borrow_mut().add(
+                    "", /* TODO: use name */
+                    symbol_table::SymbolKind::Variable,
+                    Some(symbol_table::Type::Unknown),
+                );
                 Ok(Stmt::LetDeclaration { name, value })
             }
             Ok(Token {
@@ -443,7 +471,6 @@ impl<'iso> Parser<'iso> {
         loop {
             let op = match self.lexer.peek() {
                 some_ok_token!(Plus) => Op::Add,
-                some_ok_token!(Equal) => Op::Assign,
                 some_ok_token!(LeftParen) => Op::Call,
                 some_ok_token!(Slash) => Op::Div,
                 some_ok_token!(EqualEqual) => Op::Eq,
@@ -517,8 +544,8 @@ impl<'iso> Parser<'iso> {
 
     fn prefix_binding_power(op: &Op) -> Option<((), u8)> {
         let res = match op {
-            Op::Not => ((), 9),
-            Op::Pos | Op::Neg => ((), 11),
+            Op::Not => ((), 7),
+            Op::Pos | Op::Neg => ((), 9),
             _ => return None,
         };
         Some(res)
@@ -526,11 +553,10 @@ impl<'iso> Parser<'iso> {
 
     fn infix_binding_power(op: &Op) -> Option<(u8, u8)> {
         let res = match op {
-            Op::Assign => (2, 1),
-            Op::Lt | Op::Gt | Op::Lte | Op::Gte | Op::Eq | Op::Neq => (3, 4),
-            Op::Add | Op::Sub => (5, 6),
-            Op::Mul | Op::Div => (7, 8),
-            Op::Field => (18, 17),
+            Op::Lt | Op::Gt | Op::Lte | Op::Gte | Op::Eq | Op::Neq => (1, 2),
+            Op::Add | Op::Sub => (3, 4),
+            Op::Mul | Op::Div => (5, 6),
+            Op::Field => (16, 15),
             _ => return None,
         };
         Some(res)
@@ -538,8 +564,8 @@ impl<'iso> Parser<'iso> {
 
     fn postfix_binding_power(op: &Op) -> Option<(u8, ())> {
         let res = match op {
-            Op::Call => (15, ()),
-            Op::Index => (13, ()),
+            Op::Call => (13, ()),
+            Op::Index => (11, ()),
             _ => return None,
         };
         Some(res)

@@ -45,7 +45,6 @@ pub enum Atom {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Op {
     Add,
-    Assign,
     Call,
     Div,
     Eq,
@@ -69,7 +68,6 @@ impl std::fmt::Display for Op {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Op::Add => write!(f, "+"),
-            Op::Assign => write!(f, "="),
             Op::Call => write!(f, "()"),
             Op::Div => write!(f, "/"),
             Op::Eq => write!(f, "=="),

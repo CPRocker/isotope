@@ -13,7 +13,7 @@ pub use token::TokenKind;
 
 pub struct Lexer<'iso> {
     reader: reader::CharReader<'iso>,
-    symbol_table: std::rc::Rc<std::cell::RefCell<symbol_table::SymbolTable<'iso>>>,
+    _symbol_table: std::rc::Rc<std::cell::RefCell<symbol_table::SymbolTable<'iso>>>,
 }
 
 impl<'iso> Lexer<'iso> {
@@ -23,7 +23,7 @@ impl<'iso> Lexer<'iso> {
     ) -> Result<Self, LexerError> {
         Ok(Self {
             reader: reader::CharReader::new(src).map_err(LexerError::from)?,
-            symbol_table: std::rc::Rc::clone(&symbol_table),
+            _symbol_table: std::rc::Rc::clone(&symbol_table),
         })
     }
 
