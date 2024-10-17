@@ -1,41 +1,45 @@
-use super::Expr;
+use std::borrow::Cow;
+
+use super::Expression;
+
+pub type Name<'iso> = Cow<'iso, str>;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Stmt {
+pub enum Statement<'iso> {
     Assignment {
-        name: Identifier,
-        value: Expr,
+        name: Name<'iso>,
+        value: Expression<'iso>,
     },
     Break,
-    Expr(Expr),
+    Expression(Expression<'iso>),
     FunctionDeclaration {
-        name: Identifier,
-        params: Vec<Identifier>,
-        body: Vec<Stmt>,
+        name: Name<'iso>,
+        params: Vec<Name<'iso>>,
+        body: Vec<Statement<'iso>>,
     },
     If {
-        condition: Expr,
-        body: Vec<Stmt>,
-        else_body: Option<Vec<Stmt>>,
+        condition: Expression<'iso>,
+        body: Vec<Statement<'iso>>,
+        else_body: Option<Vec<Statement<'iso>>>,
     },
     LetDeclaration {
-        name: Identifier,
-        value: Expr,
+        name: Name<'iso>,
+        value: Expression<'iso>,
     },
     Loop {
-        body: Vec<Stmt>,
+        body: Vec<Statement<'iso>>,
     },
     Nop,
-    Return(Expr),
+    Return(Expression<'iso>),
 }
 
-impl std::fmt::Display for Stmt {
+impl std::fmt::Display for Statement<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Stmt::Assignment { name, value } => write!(f, "{} = {};", name, value),
-            Stmt::Break => write!(f, "break;"),
-            Stmt::Expr(expr) => write!(f, "{}", expr),
-            Stmt::FunctionDeclaration { name, params, body } => {
+            Statement::Assignment { name, value } => write!(f, "{} = {};", name, value),
+            Statement::Break => write!(f, "break;"),
+            Statement::Expression(expr) => write!(f, "{}", expr),
+            Statement::FunctionDeclaration { name, params, body } => {
                 write!(f, "fn {}(", name)?;
                 for (i, param) in params.iter().enumerate() {
                     write!(f, "{}", param)?;
@@ -49,7 +53,7 @@ impl std::fmt::Display for Stmt {
                 }
                 write!(f, "}}")
             }
-            Stmt::If {
+            Statement::If {
                 condition,
                 body,
                 else_body,
@@ -68,37 +72,16 @@ impl std::fmt::Display for Stmt {
                 }
                 Ok(())
             }
-            Stmt::LetDeclaration { name, value } => write!(f, "let {} = {};", name, value),
-            Stmt::Loop { body } => {
+            Statement::LetDeclaration { name, value } => write!(f, "let {} = {};", name, value),
+            Statement::Loop { body } => {
                 write!(f, "loop {{ ")?;
                 for statement in body {
                     write!(f, "{} ", statement)?;
                 }
                 write!(f, "}}")
             }
-            Stmt::Nop => write!(f, "nop;"),
-            Stmt::Return(expr) => write!(f, "return {};", expr),
+            Statement::Nop => write!(f, "nop;"),
+            Statement::Return(expr) => write!(f, "return {};", expr),
         }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Identifier {
-    name: String,
-}
-
-impl std::fmt::Display for Identifier {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.name)
-    }
-}
-
-impl Identifier {
-    pub fn new(name: String) -> Self {
-        Self { name }
-    }
-
-    pub fn name(&self) -> &str {
-        &self.name
     }
 }

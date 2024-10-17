@@ -1,17 +1,19 @@
+use std::borrow::Cow;
+
 #[derive(Debug, Clone, PartialEq)]
-pub enum Expr {
-    Atom(Atom),
-    Cons(Op, Vec<Expr>),
+pub enum Expression<'iso> {
+    Atom(Atom<'iso>),
+    Cons(Op, Vec<Expression<'iso>>),
 }
 
-impl std::fmt::Display for Expr {
+impl std::fmt::Display for Expression<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Expr::Atom(Atom::Boolean(b)) => write!(f, "{}", b),
-            Expr::Atom(Atom::Identifier(s)) => write!(f, "{}", s),
-            Expr::Atom(Atom::Number(n)) => write!(f, "{}", n),
-            Expr::Atom(Atom::String(s)) => write!(f, "\"{}\"", s),
-            Expr::Cons(op, args) if op == &Op::Call => {
+            Expression::Atom(Atom::Boolean(b)) => write!(f, "{}", b),
+            Expression::Atom(Atom::Identifier(s)) => write!(f, "{}", s),
+            Expression::Atom(Atom::Number(n)) => write!(f, "{}", n),
+            Expression::Atom(Atom::String(s)) => write!(f, "\"{}\"", s),
+            Expression::Cons(op, args) if op == &Op::Call => {
                 for (i, arg) in args.iter().enumerate() {
                     if i == 0 {
                         write!(f, "({}(", arg)?;
@@ -23,7 +25,7 @@ impl std::fmt::Display for Expr {
                 }
                 write!(f, "))")
             }
-            Expr::Cons(op, args) => {
+            Expression::Cons(op, args) => {
                 write!(f, "({}", op)?;
                 for arg in args {
                     write!(f, " {}", arg)?;
@@ -35,11 +37,11 @@ impl std::fmt::Display for Expr {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Atom {
+pub enum Atom<'iso> {
     Boolean(bool),
-    Identifier(String),
+    Identifier(Cow<'iso, str>),
     Number(f64),
-    String(String),
+    String(Cow<'iso, str>),
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -26,7 +26,7 @@ where
 {
     generator: Generator<'iso>,
     out: W,
-    symbol_table: std::rc::Rc<std::cell::RefCell<symbol_table::SymbolTable<'iso>>>,
+    symbol_table: std::rc::Rc<std::cell::RefCell<symbol_table::SymbolTable>>,
 }
 
 impl<'iso, W> Compiler<'iso, W>

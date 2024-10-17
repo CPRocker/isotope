@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use miette::Result;
 
 use crate::source::Source;
@@ -13,13 +15,13 @@ pub use token::TokenKind;
 
 pub struct Lexer<'iso> {
     reader: reader::CharReader<'iso>,
-    _symbol_table: std::rc::Rc<std::cell::RefCell<symbol_table::SymbolTable<'iso>>>,
+    _symbol_table: std::rc::Rc<std::cell::RefCell<symbol_table::SymbolTable>>,
 }
 
 impl<'iso> Lexer<'iso> {
     pub fn new(
         src: &'iso Source,
-        symbol_table: std::rc::Rc<std::cell::RefCell<symbol_table::SymbolTable<'iso>>>,
+        symbol_table: std::rc::Rc<std::cell::RefCell<symbol_table::SymbolTable>>,
     ) -> Result<Self, LexerError> {
         Ok(Self {
             reader: reader::CharReader::new(src).map_err(LexerError::from)?,
@@ -45,7 +47,7 @@ enum Started {
 }
 
 impl<'iso> Iterator for Lexer<'iso> {
-    type Item = Result<Token, LexerError>;
+    type Item = Result<Token<'iso>, LexerError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.skip_read_while(|c| c.is_whitespace());
@@ -58,7 +60,7 @@ impl<'iso> Iterator for Lexer<'iso> {
             ($kind:ident) => {
                 Some(Ok(Token {
                     kind: TokenKind::$kind,
-                    orig,
+                    orig: Cow::Owned(orig),
                     offset,
                 }))
             };
@@ -101,13 +103,13 @@ impl<'iso> Iterator for Lexer<'iso> {
                     orig.push(self.reader.next().expect("already peeked"));
                     Some(Ok(Token {
                         kind: TokenKind::$if,
-                        orig,
+                        orig: Cow::Owned(orig),
                         offset,
                     }))
                 } else {
                     Some(Ok(Token {
                         kind: TokenKind::$else,
-                        orig,
+                        orig: Cow::Owned(orig),
                         offset,
                     }))
                 }
@@ -131,7 +133,7 @@ impl<'iso> Iterator for Lexer<'iso> {
                     ($kind:ident) => {
                         Some(Ok(Token {
                             kind: TokenKind::$kind,
-                            orig,
+                            orig: Cow::Owned(orig),
                             offset,
                         }))
                     };
@@ -169,7 +171,7 @@ impl<'iso> Iterator for Lexer<'iso> {
 
                 Some(Ok(Token {
                     kind: TokenKind::Number,
-                    orig,
+                    orig: Cow::Owned(orig),
                     offset,
                 }))
             }
@@ -228,7 +230,7 @@ impl<'iso> Iterator for Lexer<'iso> {
 
                 Some(Ok(Token {
                     kind: TokenKind::String,
-                    orig,
+                    orig: Cow::Owned(orig),
                     offset,
                 }))
             }

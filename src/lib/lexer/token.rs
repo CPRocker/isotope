@@ -1,17 +1,19 @@
+use std::borrow::Cow;
+
 #[derive(Debug, Clone)]
-pub struct Token {
+pub struct Token<'iso> {
     pub kind: TokenKind,
-    pub orig: String,
+    pub orig: Cow<'iso, str>,
     pub offset: usize,
 }
 
-impl Token {
+impl<'iso> Token<'iso> {
     pub fn span(&self) -> std::ops::Range<usize> {
         self.offset..self.offset + self.orig.len()
     }
 }
 
-impl std::fmt::Display for Token {
+impl std::fmt::Display for Token<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.kind {
             TokenKind::Bang
